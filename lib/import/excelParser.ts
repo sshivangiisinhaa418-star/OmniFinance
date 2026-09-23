@@ -411,62 +411,98 @@ export const transformSheetToTransactions = (
 
     const isPayable = datasetType === 'payables' || datasetType === 'purchases';
     const isReceivable = datasetType === 'receivables' || datasetType === 'sales';
-    const debit = parseAmount(extracted.debit);
-    const credit = parseAmount(extracted.credit);
-    const openingBalance = parseBalanceAmount(extracted.openingBalance, isPayable);
-    const closingBalance = extracted.closingBalance !== undefined && extracted.closingBalance !== ''
-      ? parseBalanceAmount(extracted.closingBalance, isPayable)
-      : (isPayable ? openingBalance + credit - debit : openingBalance + debit - credit);
-    const grossTotal = parseAmount(extracted.grossTotal);
-    const saleAmount = parseAmount(extracted.saleAmount);
-    const value = parseAmount(extracted.value || saleAmount || grossTotal);
-    const totalAmount = grossTotal || Math.abs(closingBalance) || (debit || credit || parseAmount(extracted.totalAmount || extracted.amount));
-    const amount = parseAmount(extracted.amount || saleAmount || totalAmount);
-    const taxAmount = parseAmount(extracted.taxAmount);
 
-    const primaryDate = row['Date'] || row['date'] || row['Voucher Date'] || row['Voucher date'] || row['Txn Date'] || extracted.date;
+    // Direct raw row key fallbacks for Tally Sales & Purchase export formats
+    const getRowVal = (...keys: string[]) => {
+      for (const k of keys) {
+        if (extracted[k] !== undefined && extracted[k] !== null && extracted[k] !== '') return extracted[k];
+      }
+      for (const k of keys) {
+        for (const [rk, rv] of Object.entries(row)) {
+          if (rk.toLowerCase().trim() === k.toLowerCase().trim() && rv !== undefined && rv !== null && rv !== '') {
+            return rv;
+          }
+        }
+      }
+      return undefined;
+    };
+
+    const voucherNoRaw = getRowVal('voucherNo', 'Vch No.', 'Vch No', 'Voucher No.', 'Voucher No', 'Voucher Number', 'Invoice No');
+    const voucherRefNoRaw = getRowVal('voucherRefNo', 'Voucher Ref. No.', 'Voucher Ref No', 'Vch Ref No', 'Ref No', 'Supplier Invoice No.');
+    const gstinRaw = getRowVal('gstin', 'GSTIN/UIN', 'GSTIN', 'UIN', 'Party GSTIN');
+    const panNoRaw = getRowVal('panNo', 'PAN No.', 'PAN No', 'PAN', 'PAN Number');
+
+    const rawQty = getRowVal('quantity', 'Quantity', 'Qty', 'Units');
+    const rawVal = getRowVal('value', 'Value', 'Taxable Value', 'Assessable Value');
+    const rawGross = getRowVal('grossTotal', 'Gross Total', 'Total Amount', 'Invoice Value', 'Bill Amount');
+    const rawSale = getRowVal('saleAmount', 'Sale', 'Sales', 'Purchases A/c', 'Purchases Ac', 'Purchase', 'Purchase Amount');
+    const rawIgst = getRowVal('igst', 'IGST', 'Integrated Tax', 'Input IGST Silvassa', 'Input IGST KOL');
+    const rawCgst = getRowVal('cgst', 'CGST', 'Central Tax', 'Input CGST Silvassa', 'Input CGST KOL');
+    const rawSgst = getRowVal('sgst', 'SGST', 'State Tax', 'Input SGST Silvassa', 'Input SGST KOL');
+    const rawRound = getRowVal('roundOff', 'Round Off', 'Roundoff', 'Rounding');
+    const rawWork = getRowVal('workContract', 'Work Contract', 'Works Contract');
+    const rawTrans = getRowVal('transportationCharges', 'Transportation Charges', 'Freight', 'Transport Charges', 'Transportation Expenses');
+
+    const debit = parseAmount(getRowVal('debit', 'Debit', 'Dr'));
+    const credit = parseAmount(getRowVal('credit', 'Credit', 'Cr'));
+    const openingBalance = parseBalanceAmount(getRowVal('openingBalance', 'Opening Balance', 'Opening'), isPayable);
+    const closingBalance = getRowVal('closingBalance', 'Closing Balance', 'Closing') !== undefined
+      ? parseBalanceAmount(getRowVal('closingBalance', 'Closing Balance', 'Closing'), isPayable)
+      : (isPayable ? openingBalance + credit - debit : openingBalance + debit - credit);
+
+    const grossTotal = parseAmount(rawGross);
+    const saleAmount = parseAmount(rawSale);
+    const value = parseAmount(rawVal || saleAmount || grossTotal);
+    const totalAmount = grossTotal || Math.abs(closingBalance) || (debit || credit || parseAmount(getRowVal('totalAmount', 'amount', 'Amount')));
+    const amount = parseAmount(rawSale || rawGross || getRowVal('amount', 'Amount') || totalAmount);
+    const taxAmount = parseAmount(getRowVal('taxAmount', 'Tax Amount')) || (parseAmount(rawIgst) + parseAmount(rawCgst) + parseAmount(rawSgst));
+
+    const primaryDate = row['Date'] || row['date'] || row['Voucher Date'] || row['Voucher date'] || row['Txn Date'] || getRowVal('date');
 
     return {
       id: `txn_${importId}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
       sourceImportId: importId,
       date: parseDate(primaryDate),
-      voucherNo: String(extracted.voucherNo || `VCH-${idx + 1001}`),
+      voucherNo: String(voucherNoRaw || `VCH-${idx + 1001}`),
       voucherType,
-      voucherRefNo: extracted.voucherRefNo ? String(extracted.voucherRefNo) : undefined,
+      voucherRefNo: voucherRefNoRaw ? String(voucherRefNoRaw) : undefined,
       partyName: String(
         extracted.partyName ||
           extracted.particulars ||
+          row['Particulars'] ||
+          row['particulars'] ||
+          row['Party Name'] ||
+          row['Name'] ||
           row.Column_1 ||
           row.column_1 ||
           row.Column_0 ||
-          row.Particulars ||
           Object.values(row).find(v => v && String(v).trim() !== '') ||
           'Cash Customer'
       ),
       partyType,
-      gstin: extracted.gstin ? String(extracted.gstin) : undefined,
-      panNo: extracted.panNo ? String(extracted.panNo) : undefined,
+      gstin: gstinRaw ? String(gstinRaw) : undefined,
+      panNo: panNoRaw ? String(panNoRaw) : undefined,
       ledgerName: String(extracted.ledgerName || (datasetType === 'sales' ? 'Sales Account' : datasetType === 'purchases' ? 'Purchase Account' : 'General Ledger')),
       ledgerCategory: extracted.itemCategory || datasetType,
       itemName: extracted.itemName ? String(extracted.itemName) : undefined,
       itemCategory: extracted.itemCategory ? String(extracted.itemCategory) : undefined,
-      quantity: parseAmount(extracted.quantity),
-      rate: parseAmount(extracted.rate),
+      quantity: parseAmount(rawQty),
+      rate: parseAmount(extracted.rate || row['Rate']),
       value,
       grossTotal,
       saleAmount,
-      roundOff: parseAmount(extracted.roundOff),
-      workContract: parseAmount(extracted.workContract),
-      transportationCharges: parseAmount(extracted.transportationCharges),
+      roundOff: parseAmount(rawRound),
+      workContract: parseAmount(rawWork),
+      transportationCharges: parseAmount(rawTrans),
       openingBalance,
       closingBalance,
       debit,
       credit,
       amount,
       taxAmount,
-      cgst: parseAmount(extracted.cgst),
-      sgst: parseAmount(extracted.sgst),
-      igst: parseAmount(extracted.igst),
+      cgst: parseAmount(rawCgst),
+      sgst: parseAmount(rawSgst),
+      igst: parseAmount(rawIgst),
       totalAmount,
       dueDate: extracted.dueDate ? parseDate(extracted.dueDate) : undefined,
       overdueDays: extracted.overdueDays ? parseAmount(extracted.overdueDays) : 0,

@@ -119,21 +119,21 @@ export const getSnapshotTransactions = async (
       itemCategory: d.item_category,
       quantity: Number(d.quantity) || 0,
       rate: Number(d.rate) || 0,
-      value: Number(d.value) || 0,
-      grossTotal: Number(d.gross_total) || 0,
-      saleAmount: Number(d.sale_amount) || 0,
+      value: Number(d.value || d.sale_amount || d.purchases_ac || d.gross_total) || 0,
+      grossTotal: Number(d.gross_total || d.total_amount || d.amount) || 0,
+      saleAmount: Number(d.sale_amount || d.purchases_ac || d.amount || d.value) || 0,
       roundOff: Number(d.round_off) || 0,
-      cgst: Number(d.cgst) || 0,
-      sgst: Number(d.sgst) || 0,
-      igst: Number(d.igst) || 0,
+      cgst: Number(d.cgst || d.input_cgst_silvassa || d.input_cgst_kol) || 0,
+      sgst: Number(d.sgst || d.input_sgst_silvassa || d.input_sgst_kol) || 0,
+      igst: Number(d.igst || d.input_igst_silvassa || d.input_igst_kol) || 0,
       workContract: Number(d.work_contract) || 0,
-      transportationCharges: Number(d.transportation_charges) || 0,
+      transportationCharges: Number(d.transportation_charges || d.transportation_expenses || d.transportation_expenses_rajmahal) || 0,
       openingBalance: Number(d.opening_balance) || 0,
       closingBalance: Number(d.closing_balance) || 0,
-      debit: Number(d.debit) || 0,
+      debit: Number(d.debit || d.gross_total || d.amount) || 0,
       credit: Number(d.credit) || 0,
-      amount: Number(d.amount || d.sale_amount || d.gross_total || 0),
-      taxAmount: Number(d.tax_amount) || 0,
+      amount: Number(d.amount || d.sale_amount || d.purchases_ac || d.gross_total || 0),
+      taxAmount: Number(d.tax_amount || (Number(d.igst || 0) + Number(d.cgst || 0) + Number(d.sgst || 0))) || 0,
       totalAmount: Number(d.total_amount || d.gross_total || d.amount || 0),
       dueDate: d.due_date,
       overdueDays: Number(d.overdue_days) || 0,
@@ -297,11 +297,22 @@ export const saveSnapshotWithTransactions = async (
       ledger_name: t.ledgerName || 'Purchase Account',
       item_name: t.itemName,
       item_category: t.itemCategory,
+      gstin: t.gstin || '',
+      pan_no: t.panNo || '',
       quantity: t.quantity || 0,
       rate: t.rate || 0,
-      amount: t.amount || 0,
-      tax_amount: t.taxAmount || 0,
-      total_amount: t.totalAmount || 0,
+      value: t.value || t.saleAmount || t.grossTotal || t.amount || 0,
+      gross_total: t.grossTotal || t.totalAmount || t.amount || 0,
+      purchases_ac: t.saleAmount || t.amount || 0,
+      amount: t.amount || t.grossTotal || 0,
+      tax_amount: t.taxAmount || (t.igst + t.cgst + t.sgst) || 0,
+      total_amount: t.totalAmount || t.grossTotal || t.amount || 0,
+      round_off: t.roundOff || 0,
+      debit: t.debit || t.grossTotal || t.amount || 0,
+      credit: t.credit || 0,
+      igst: t.igst || 0,
+      cgst: t.cgst || 0,
+      sgst: t.sgst || 0,
       description: t.description,
     }));
   } else {
@@ -356,11 +367,11 @@ export const clearModuleData = async (module: DatasetType): Promise<void> => {
 export const clearAllData = async (): Promise<void> => {
   if (!isSupabaseConfigured() || !supabase) return;
   try {
-    const modules: DatasetType[] = ['payables', 'receivables', 'sales', 'purchases', 'inventory', 'tax', 'expenses'];
+    const modules: DatasetType[] = ['payables', 'receivables', 'sales', 'purchases', 'payments', 'receipts', 'inventory', 'tax', 'expenses'];
     for (const m of modules) {
-      await supabase.from(getTableNameForModule(m)).delete().neq('id', '0');
+      await supabase.from(getTableNameForModule(m)).delete().not('id', 'is', null);
     }
-    await supabase.from('snapshots').delete().neq('id', '0');
+    await supabase.from('snapshots').delete().not('id', 'is', null);
   } catch (err) {
     console.error('Failed to clear Supabase tables', err);
   }
