@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS public.snapshots (
     id TEXT PRIMARY KEY,
     module TEXT NOT NULL,
+    company_name TEXT DEFAULT 'BKM Industries Limited',
     file_name TEXT NOT NULL,
     file_size INTEGER DEFAULT 0,
     uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

@@ -38,16 +38,46 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   setTheme,
 }) => {
-  const [selectedCompany, setSelectedCompany] = useState<string>('Acme Enterprise Pvt Ltd');
+  const DEFAULT_COMPANIES = [
+    'BKM Industries Limited',
+    'Rajmahal Enterprise Pvt Ltd',
+    'Burnpur Engineering Works',
+    'Silvassa Synthetics Ltd',
+    'Vedic Traders & Logistics'
+  ];
+
+  const [selectedCompany, setSelectedCompany] = useState<string>('BKM Industries Limited');
   const [isCompanyOpen, setIsCompanyOpen] = useState(false);
-  const [companies, setCompanies] = useState<string[]>([
-    'Acme Enterprise Pvt Ltd',
-    'Tally Global Industries',
-    'Vedic Traders Pvt Ltd'
-  ]);
+  const [companies, setCompanies] = useState<string[]>(DEFAULT_COMPANIES);
   const [newCompanyInput, setNewCompanyInput] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [lastUpdate] = useState<string>('22 Sep 2026, 03:15 PM');
+
+  // Load saved company state on mount
+  React.useEffect(() => {
+    const savedCompany = localStorage.getItem('omnifinance_selected_company');
+    const savedList = localStorage.getItem('omnifinance_company_list');
+    
+    if (savedList) {
+      try {
+        const parsed = JSON.parse(savedList);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCompanies(parsed);
+        }
+      } catch (e) {}
+    }
+    
+    if (savedCompany) {
+      setSelectedCompany(savedCompany);
+    }
+  }, []);
+
+  // Save selected company to localStorage
+  const handleSelectCompany = (companyName: string) => {
+    setSelectedCompany(companyName);
+    localStorage.setItem('omnifinance_selected_company', companyName);
+    setIsCompanyOpen(false);
+  };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, searchQuery: e.target.value }));
@@ -77,10 +107,14 @@ export const Header: React.FC<HeaderProps> = ({
   const handleAddCompany = () => {
     if (newCompanyInput.trim()) {
       const name = newCompanyInput.trim();
+      let updatedList = companies;
       if (!companies.includes(name)) {
-        setCompanies(prev => [...prev, name]);
+        updatedList = [...companies, name];
+        setCompanies(updatedList);
+        localStorage.setItem('omnifinance_company_list', JSON.stringify(updatedList));
       }
       setSelectedCompany(name);
+      localStorage.setItem('omnifinance_selected_company', name);
       setNewCompanyInput('');
       setShowAddCompany(false);
       setIsCompanyOpen(false);
@@ -125,10 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
               {companies.map(comp => (
                 <button
                   key={comp}
-                  onClick={() => {
-                    setSelectedCompany(comp);
-                    setIsCompanyOpen(false);
-                  }}
+                  onClick={() => handleSelectCompany(comp)}
                   className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between transition cursor-pointer ${
                     selectedCompany === comp
                       ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
