@@ -68,7 +68,7 @@ export default function PayablesPage() {
   const [activeTabFilter, setActiveTabFilter] = useState<'all' | 'high_exposure' | 'unsettled' | 'advances'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<SortField>('closingBalance');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const pageSize = 10;
 
   const handleSort = (field: SortField) => {

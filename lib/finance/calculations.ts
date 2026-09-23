@@ -86,16 +86,16 @@ export const calculateKPIs = (
     const vType = t.voucherType.toLowerCase();
 
     if (vType.includes('sales') || t.partyType === 'customer') {
-      totalSales += t.totalAmount || t.amount;
+      totalSales += t.grossTotal || t.totalAmount || t.amount || 0;
       if (t.paymentStatus === 'unpaid') {
-        totalReceivables += t.totalAmount || t.amount;
+        totalReceivables += t.grossTotal || t.totalAmount || t.amount || 0;
       }
     }
 
     if (vType.includes('purchase') || t.partyType === 'vendor') {
-      totalPurchases += t.totalAmount || t.amount;
+      totalPurchases += t.grossTotal || t.totalAmount || t.amount || 0;
       if (t.paymentStatus === 'unpaid') {
-        totalPayables += t.totalAmount || t.amount;
+        totalPayables += t.grossTotal || t.totalAmount || t.amount || 0;
       }
     }
 
@@ -231,7 +231,7 @@ export const calculateCustomerSummaries = (txns: FinancialTransaction[]): Custom
         avgInvoiceValue: 0,
       };
 
-      const amt = t.totalAmount || t.amount || 0;
+      const amt = t.grossTotal || t.totalAmount || t.amount || 0;
       const deb = t.debit !== undefined ? t.debit : (t.voucherType.toLowerCase().includes('sales') ? amt : 0);
       const cred = t.credit !== undefined ? t.credit : 0;
       const opBal = t.openingBalance || 0;
@@ -289,7 +289,7 @@ export const calculateVendorSummaries = (txns: FinancialTransaction[]): VendorSu
         avgOrderValue: 0,
       };
 
-      const amt = t.totalAmount || t.amount || 0;
+      const amt = t.grossTotal || t.totalAmount || t.amount || 0;
       const deb = t.debit !== undefined ? t.debit : 0;
       const cred = t.credit !== undefined ? t.credit : (t.voucherType.toLowerCase().includes('purchase') ? amt : 0);
       const opBal = t.openingBalance || 0;

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getSnapshotsForModule, getSnapshotTransactions } from '@/lib/storage';
 import { FinancialTransaction, FinancialSnapshot } from '@/types';
 import { calculateKPIs, calculateCustomerSummaries, calculateMonthlyTrends } from '@/lib/finance/calculations';
+import { formatDateDisplay } from '@/lib/import/validator';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
@@ -37,7 +38,7 @@ export default function SalesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<string>('date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const pageSize = 10;
 
   const handleSort = (field: string) => {
@@ -97,8 +98,8 @@ export default function SalesPage() {
     (acc, t) => {
       acc.quantity += t.quantity || 0;
       acc.value += t.value || 0;
-      acc.grossTotal += t.grossTotal || t.totalAmount || t.amount || 0;
-      acc.sale += t.saleAmount || t.amount || 0;
+      acc.grossTotal += t.grossTotal || 0;
+      acc.sale += t.saleAmount || 0;
       acc.igst += t.igst || 0;
       acc.roundOff += t.roundOff || 0;
       acc.cgst += t.cgst || 0;
@@ -439,7 +440,7 @@ export default function SalesPage() {
                     className="hover:bg-orange-500/5 dark:hover:bg-stone-800/50 transition-colors"
                   >
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 font-mono text-stone-600 dark:text-stone-400">
-                      {t.date}
+                      {formatDateDisplay(t.date)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 font-bold text-stone-900 dark:text-stone-100">
                       {t.partyName}
@@ -468,10 +469,10 @@ export default function SalesPage() {
                       {fmtCurrency(t.value)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
-                      {fmtCurrency(t.grossTotal || t.totalAmount)}
+                      {fmtCurrency(t.grossTotal)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {fmtCurrency(t.saleAmount || t.amount)}
+                      {fmtCurrency(t.saleAmount)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmtCurrency(t.igst)}

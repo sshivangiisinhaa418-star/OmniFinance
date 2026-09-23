@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getSnapshotsForModule, getSnapshotTransactions } from '@/lib/storage';
 import { FinancialTransaction, FinancialSnapshot } from '@/types';
 import { calculateVendorSummaries, calculateMonthlyTrends } from '@/lib/finance/calculations';
+import { formatDateDisplay } from '@/lib/import/validator';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
@@ -69,7 +70,7 @@ export default function PurchasesPage() {
   const [activeTabFilter, setActiveTabFilter] = useState<'all' | 'high_value' | 'tax_vouchers' | 'freight'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<string>('date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const pageSize = 10;
 
   const handleSort = (field: string) => {
@@ -131,7 +132,7 @@ export default function PurchasesPage() {
   }
 
   // --- 1. CORE EXECUTIVE STATS ---
-  const totalValue = activeTxns.reduce((s, t) => s + (t.grossTotal || t.totalAmount || t.value || t.amount || 0), 0);
+  const totalValue = activeTxns.reduce((s, t) => s + (t.grossTotal || t.value || t.amount || 0), 0);
   const totalQuantity = activeTxns.reduce((s, t) => s + (t.quantity || 0), 0);
   
   const totalIGST = activeTxns.reduce((s, t) => s + (t.igst || 0), 0);
@@ -603,7 +604,7 @@ export default function PurchasesPage() {
                     className="hover:bg-orange-500/5 dark:hover:bg-stone-800/50 transition-colors"
                   >
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 font-mono text-stone-600 dark:text-stone-400">
-                      {t.date}
+                      {formatDateDisplay(t.date)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 font-bold text-stone-900 dark:text-stone-100">
                       {t.partyName}
@@ -626,7 +627,7 @@ export default function PurchasesPage() {
                       {fmt(t.value)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
-                      {fmt(t.grossTotal || t.totalAmount || t.amount)}
+                      {fmt(t.grossTotal || t.value || t.amount)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.igst)}
