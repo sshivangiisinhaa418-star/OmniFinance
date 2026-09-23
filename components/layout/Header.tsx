@@ -39,11 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   setTheme,
 }) => {
   const DEFAULT_COMPANIES = [
-    'BKM Industries Limited',
-    'Rajmahal Enterprise Pvt Ltd',
-    'Burnpur Engineering Works',
-    'Silvassa Synthetics Ltd',
-    'Vedic Traders & Logistics'
+    'BKM Industries Limited'
   ];
 
   const [selectedCompany, setSelectedCompany] = useState<string>('BKM Industries Limited');
@@ -61,10 +57,19 @@ export const Header: React.FC<HeaderProps> = ({
     if (savedList) {
       try {
         const parsed = JSON.parse(savedList);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setCompanies(parsed);
+        // Filter out old removed demo companies
+        const legacyMock = ['Rajmahal Enterprise Pvt Ltd', 'Burnpur Engineering Works', 'Silvassa Synthetics Ltd', 'Vedic Traders & Logistics', 'Acme Enterprise Pvt Ltd', 'Tally Global Industries', 'Vedic Traders Pvt Ltd'];
+        const filtered = parsed.filter((c: string) => !legacyMock.includes(c));
+        if (Array.isArray(filtered) && filtered.length > 0) {
+          setCompanies(filtered);
+        } else {
+          setCompanies(DEFAULT_COMPANIES);
         }
-      } catch (e) {}
+      } catch (e) {
+        setCompanies(DEFAULT_COMPANIES);
+      }
+    } else {
+      setCompanies(DEFAULT_COMPANIES);
     }
     
     if (savedCompany) {
