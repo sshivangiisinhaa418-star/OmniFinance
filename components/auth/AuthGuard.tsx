@@ -10,16 +10,18 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
+  // Standalone public routes bypass AuthGuard completely to prevent redirect loops
+  const isPublicRoute = pathname === '/login' || pathname === '/auth/callback';
+
   useEffect(() => {
+    if (isPublicRoute) {
+      setIsAuthenticated(true);
+      return;
+    }
+
     let isMounted = true;
 
     const checkAuth = async () => {
-      // If currently on login page, skip protection check
-      if (pathname === '/login') {
-        if (isMounted) setIsAuthenticated(true);
-        return;
-      }
-
       let authenticated = false;
 
       // Check Supabase Auth session if configured
@@ -64,7 +66,7 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     // Listen for auth state changes if Supabase is enabled
     if (isSupabaseConfigured() && supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (!session && pathname !== '/login') {
+        if (!session && !isPublicRoute) {
           setIsAuthenticated(false);
           router.replace('/login');
         }
@@ -78,14 +80,14 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     return () => {
       isMounted = false;
     };
-  }, [pathname, router]);
+  }, [pathname, router, isPublicRoute]);
 
-  // If on login page, render children directly
-  if (pathname === '/login') {
+  // If on login or auth callback page, render children directly
+  if (isPublicRoute) {
     return <>{children}</>;
   }
 
-  // Show security verification loader while checking auth state
+  // Show security verification loader while checking auth state on protected routes
   if (isAuthenticated === null || isAuthenticated === false) {
     return (
       <div className="min-h-screen bg-stone-950 text-white flex flex-col items-center justify-center p-6 space-y-4">
