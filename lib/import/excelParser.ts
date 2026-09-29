@@ -413,21 +413,22 @@ export const transformSheetToTransactions = (
     const isReceivable = datasetType === 'receivables' || datasetType === 'sales';
 
     // Direct raw row key fallbacks for Tally Sales & Purchase export formats
+    const normStr = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
     const getRowVal = (...keys: string[]) => {
       for (const k of keys) {
         if (extracted[k] !== undefined && extracted[k] !== null && extracted[k] !== '') return extracted[k];
       }
-      for (const k of keys) {
-        for (const [rk, rv] of Object.entries(row)) {
-          if (rk.toLowerCase().trim() === k.toLowerCase().trim() && rv !== undefined && rv !== null && rv !== '') {
-            return rv;
-          }
+      const normKeys = keys.map(k => normStr(k));
+      for (const [rk, rv] of Object.entries(row)) {
+        if (rv !== undefined && rv !== null && rv !== '') {
+          const normRk = normStr(rk);
+          if (normKeys.includes(normRk)) return rv;
         }
       }
       return undefined;
     };
 
-    const voucherNoRaw = getRowVal('voucherNo', 'Vch No.', 'Vch No', 'Voucher No.', 'Voucher No', 'Voucher Number', 'Invoice No');
+    const voucherNoRaw = getRowVal('voucherNo', 'Vch No.', 'Vch No', 'Voucher No.', 'Voucher No', 'Voucher Number', 'Invoice No', 'Bill No.');
     const voucherRefNoRaw = getRowVal('voucherRefNo', 'Voucher Ref. No.', 'Voucher Ref No', 'Vch Ref No', 'Ref No', 'Supplier Invoice No.');
     const gstinRaw = getRowVal('gstin', 'GSTIN/UIN', 'GSTIN', 'UIN', 'Party GSTIN');
     const panNoRaw = getRowVal('panNo', 'PAN No.', 'PAN No', 'PAN', 'PAN Number');
@@ -466,15 +467,18 @@ export const transformSheetToTransactions = (
     if (!parsedSale && parsedAmt) parsedSale = parsedAmt;
     if (!parsedSale && parsedGross) parsedSale = parsedGross > taxAmount ? parsedGross - taxAmount : parsedGross;
     if (!parsedSale && parsedTotal) parsedSale = parsedTotal > taxAmount ? parsedTotal - taxAmount : parsedTotal;
+    if (!parsedSale && (debit || credit)) parsedSale = isPayable ? (debit || credit) : (credit || debit);
 
     if (!parsedVal && parsedSale) parsedVal = parsedSale;
     if (!parsedVal && parsedGross) parsedVal = parsedGross > taxAmount ? parsedGross - taxAmount : parsedGross;
     if (!parsedVal && parsedAmt) parsedVal = parsedAmt;
+    if (!parsedVal && (debit || credit)) parsedVal = isPayable ? (debit || credit) : (credit || debit);
 
     if (!parsedGross && parsedSale) parsedGross = parsedSale + taxAmount;
     if (!parsedGross && parsedVal) parsedGross = parsedVal + taxAmount;
     if (!parsedGross && parsedAmt) parsedGross = parsedAmt;
     if (!parsedGross && parsedTotal) parsedGross = parsedTotal;
+    if (!parsedGross && (debit || credit)) parsedGross = isPayable ? (debit || credit) : (credit || debit);
 
     const grossTotal = parsedGross;
     const saleAmount = parsedSale;

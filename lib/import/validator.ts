@@ -2,9 +2,12 @@
 export const parseAmount = (val: any): number => {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  const str = String(val).replace(/[^0-9.-]/g, '');
-  const num = parseFloat(str);
-  return isNaN(num) ? 0 : num;
+  const str = String(val).trim();
+  const isNegative = /^\(.*\)$/.test(str) || str.endsWith('-');
+  const cleanStr = str.replace(/[^0-9.]/g, '');
+  const num = parseFloat(cleanStr);
+  if (isNaN(num)) return 0;
+  return isNegative ? -num : num;
 };
 
 // Clean and parse financial balance amounts taking Dr/Cr into account

@@ -77,22 +77,25 @@ export const autoMapColumn = (
   if (normHeader === 'date' || normHeader === 'voucherdate' || normHeader === 'txndate' || normHeader === 'transactiondate' || normHeader === 'billdate') return { targetField: 'date', confidence: 100 };
   if (normHeader.includes('supplier') && (normHeader.includes('date') || normHeader.includes('inv'))) return { targetField: 'unmapped', confidence: 0 };
 
-  if (normHeader === 'particulars' || normHeader === 'column1' || normHeader === 'column0') return { targetField: 'partyName', confidence: 100 };
-  if (normHeader === 'vouchertype') return { targetField: 'voucherType', confidence: 100 };
-  if (normHeader === 'voucherno' || normHeader === 'vouchernumber') return { targetField: 'voucherNo', confidence: 100 };
-  if (normHeader === 'voucherrefno' || normHeader === 'vchrefno') return { targetField: 'voucherRefNo', confidence: 100 };
-  if (normHeader === 'gstinuin' || normHeader === 'gstin') return { targetField: 'gstin', confidence: 100 };
-  if (normHeader === 'panno' || normHeader === 'pan') return { targetField: 'panNo', confidence: 100 };
-  if (normHeader === 'quantity' || normHeader === 'qty') return { targetField: 'quantity', confidence: 100 };
-  if (normHeader === 'value') return { targetField: 'value', confidence: 100 };
-  if (normHeader === 'grosstotal') return { targetField: 'grossTotal', confidence: 100 };
-  if (normHeader === 'sale' || normHeader === 'sales') return { targetField: 'saleAmount', confidence: 100 };
-  if (normHeader === 'igst') return { targetField: 'igst', confidence: 100 };
-  if (normHeader === 'roundoff') return { targetField: 'roundOff', confidence: 100 };
-  if (normHeader === 'cgst') return { targetField: 'cgst', confidence: 100 };
-  if (normHeader === 'sgst') return { targetField: 'sgst', confidence: 100 };
-  if (normHeader === 'workcontract') return { targetField: 'workContract', confidence: 100 };
-  if (normHeader === 'transportationcharges') return { targetField: 'transportationCharges', confidence: 100 };
+  if (normHeader === 'particulars' || normHeader === 'column1' || normHeader === 'column0' || normHeader.includes('party') || normHeader.includes('customer') || normHeader.includes('vendor') || normHeader.includes('buyer') || normHeader.includes('supplier')) return { targetField: 'partyName', confidence: 100 };
+  if (normHeader.includes('vouchertype') || normHeader === 'vchtype' || normHeader === 'type') return { targetField: 'voucherType', confidence: 100 };
+  if (normHeader.includes('voucherno') || normHeader.includes('vouchernumber') || normHeader === 'vchno' || normHeader.includes('invoiceno') || normHeader === 'billno') return { targetField: 'voucherNo', confidence: 100 };
+  if (normHeader.includes('voucherrefno') || normHeader === 'vchrefno' || normHeader.includes('refno') || normHeader.includes('supplierinvoice')) return { targetField: 'voucherRefNo', confidence: 100 };
+  if (normHeader.includes('gstin') || normHeader.includes('uin')) return { targetField: 'gstin', confidence: 100 };
+  if (normHeader.includes('pan')) return { targetField: 'panNo', confidence: 100 };
+  if (normHeader.includes('quantity') || normHeader === 'qty' || normHeader === 'units' || normHeader === 'pcs' || normHeader === 'nos' || normHeader === 'bags' || normHeader === 'kgs' || normHeader === 'mtrs') return { targetField: 'quantity', confidence: 100 };
+
+  if (normHeader === 'value' || normHeader.includes('taxable') || normHeader.includes('assessable')) return { targetField: 'value', confidence: 100 };
+  if (normHeader.includes('grosstotal') || normHeader.includes('totalamount') || normHeader.includes('invoicevalue') || normHeader.includes('billamount') || normHeader.includes('netamount') || normHeader.includes('totalvalue') || normHeader === 'total' || normHeader.includes('billedamount')) return { targetField: 'grossTotal', confidence: 100 };
+  if (normHeader.includes('sale') || normHeader.includes('sales') || normHeader.includes('purchase') || normHeader.includes('purchases')) return { targetField: 'saleAmount', confidence: 100 };
+
+  if (normHeader.includes('igst')) return { targetField: 'igst', confidence: 100 };
+  if (normHeader.includes('round')) return { targetField: 'roundOff', confidence: 100 };
+  if (normHeader.includes('cgst')) return { targetField: 'cgst', confidence: 100 };
+  if (normHeader.includes('sgst') || normHeader.includes('utgst')) return { targetField: 'sgst', confidence: 100 };
+  if (normHeader.includes('workcontract') || normHeader.includes('workscontract')) return { targetField: 'workContract', confidence: 100 };
+  if (normHeader.includes('transport') || normHeader.includes('freight')) return { targetField: 'transportationCharges', confidence: 100 };
+
   // CRITICAL: Check debit/credit BEFORE opening/closing to handle "Opening Balance Debit" correctly
   if (normHeader.includes('debit') || normHeader === 'dr') return { targetField: 'debit', confidence: 100 };
   if (normHeader.includes('credit') || normHeader === 'cr') return { targetField: 'credit', confidence: 100 };
