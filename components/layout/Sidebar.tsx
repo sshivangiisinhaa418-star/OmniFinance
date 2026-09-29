@@ -50,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
     { label: 'Payables Transactions', href: '/payables', icon: CreditCard, dbTable: 'payables_transactions' },
     { label: 'Payment Register', href: '/payments', icon: Receipt, dbTable: 'payments_transactions' },
     { label: 'Receipt Register', href: '/receipts', icon: Wallet, dbTable: 'receipts_transactions' },
+    { label: 'Excel Datasets & History', href: '/datasets', icon: Database, badge: 'Archive' },
     { label: 'System Settings', href: '/settings', icon: Settings, badge: 'Config' },
   ];
 

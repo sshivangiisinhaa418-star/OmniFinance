@@ -1,5 +1,6 @@
 import { FinancialTransaction, SourceImport, AuditLogItem, FinancialSnapshot, DatasetType } from '@/types';
 import { supabase, isSupabaseConfigured } from './supabase/client';
+import { recordAuditLog } from './datasets/datasetService';
 
 // Map each financial module to its own dedicated Supabase table
 const getTableNameForModule = (module: DatasetType): string => {
@@ -64,6 +65,11 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
       grandTotalDebit: Number(d.grand_total_debit) || 0,
       grandTotalCredit: Number(d.grand_total_credit) || 0,
       grandTotalClosing: Number(d.grand_total_closing) || 0,
+      storageBucket: d.storage_bucket,
+      storagePath: d.storage_path,
+      fileHash: d.file_hash,
+      archivedAt: d.archived_at,
+      archivedBy: d.archived_by,
     }));
   } catch (err) {
     console.error(`Exception fetching snapshots for ${module} from Supabase:`, err);
@@ -73,7 +79,8 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
 
 export const getLatestSnapshotForModule = async (module: DatasetType): Promise<FinancialSnapshot | null> => {
   const snapshots = await getSnapshotsForModule(module);
-  return snapshots.length > 0 ? snapshots[0] : null;
+  const activeSnapshots = snapshots.filter(s => s.status === 'active');
+  return activeSnapshots.length > 0 ? activeSnapshots[0] : null;
 };
 
 export const getSnapshotTransactions = async (
@@ -161,16 +168,6 @@ export const saveSnapshotWithTransactions = async (
 
   const tableName = getTableNameForModule(snapshot.module);
 
-  // OPTION A: Cleanly replace/purge existing snapshots & transactions for this module
-  try {
-    // Delete existing transactions for this module
-    await supabase.from(tableName).delete().neq('id', '0');
-    // Delete existing snapshot headers for this module
-    await supabase.from('snapshots').delete().eq('module', snapshot.module);
-  } catch (cleanErr) {
-    console.warn(`Snapshot purge notice for module ${snapshot.module}:`, cleanErr);
-  }
-
   // 1. Upsert Snapshot Header in Supabase
   const { error: snapErr } = await supabase.from('snapshots').upsert({
     id: snapshot.id,
@@ -185,6 +182,9 @@ export const saveSnapshotWithTransactions = async (
     grand_total_credit: snapshot.grandTotalCredit || 0,
     grand_total_closing: snapshot.grandTotalClosing || 0,
     status: snapshot.status || 'active',
+    storage_bucket: snapshot.storageBucket || null,
+    storage_path: snapshot.storagePath || null,
+    file_hash: snapshot.fileHash || null,
   });
 
   if (snapErr) {
@@ -351,6 +351,22 @@ export const saveSnapshotWithTransactions = async (
       throw insertErr;
     }
   }
+
+  // 4. Log audit event for dataset upload
+  await recordAuditLog({
+    action: 'UPLOAD_DATASET',
+    datasetId: snapshot.id,
+    fileName: snapshot.fileName,
+    module: snapshot.module,
+    details: `Imported dataset "${snapshot.fileName}" with ${snapshot.recordCount} rows into module "${snapshot.module}".`,
+    userEmail: snapshot.uploadedBy,
+    metadata: {
+      recordCount: snapshot.recordCount,
+      grandTotalClosing: snapshot.grandTotalClosing,
+      storagePath: snapshot.storagePath,
+      fileHash: snapshot.fileHash,
+    },
+  });
 };
 
 // ==========================================

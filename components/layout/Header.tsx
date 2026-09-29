@@ -14,10 +14,12 @@ import {
   ChevronDown,
   Check,
   Plus,
-  LogOut
+  LogOut,
+  Database
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { downloadSampleTallyExcel } from '@/lib/sampleData/tallyGenerator';
+import { DatasetHistoryModal } from '@/components/datasets/DatasetHistoryModal';
 
 interface HeaderProps {
   filters: GlobalFilterState;
@@ -126,6 +128,8 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const [isDatasetHistoryOpen, setIsDatasetHistoryOpen] = useState(false);
+
   return (
     <header
       className={`fixed top-0 right-0 z-30 h-16 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 flex items-center justify-between px-6 transition-all duration-300 ${
@@ -218,6 +222,16 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Controls & Presets */}
       <div className="flex items-center gap-3">
+        {/* Dataset History Archive Button */}
+        <button
+          onClick={() => setIsDatasetHistoryOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600/10 hover:bg-orange-600/20 text-orange-600 dark:text-orange-400 text-xs font-bold rounded-xl border border-orange-500/30 transition cursor-pointer"
+          title="Open Excel Dataset Lifecycle Archive"
+        >
+          <Database className="w-3.5 h-3.5 text-orange-500" />
+          <span className="hidden sm:inline">Excel Archive</span>
+        </button>
+
         {/* Date Presets */}
         <div className="flex items-center bg-stone-100 dark:bg-stone-950/70 border border-stone-200 dark:border-stone-800 rounded-xl p-1 text-xs">
           <Calendar className="w-3.5 h-3.5 text-stone-400 ml-2 mr-1" />
@@ -287,6 +301,13 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Updated: {lastUpdate}</span>
         </div>
       </div>
+
+      {/* Dataset History Lifecycle Archive Modal */}
+      <DatasetHistoryModal
+        isOpen={isDatasetHistoryOpen}
+        onClose={() => setIsDatasetHistoryOpen(false)}
+        onDataRefreshed={onDataRefreshed}
+      />
     </header>
   );
 };

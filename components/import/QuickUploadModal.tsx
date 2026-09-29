@@ -9,6 +9,8 @@ import { TARGET_FIELDS } from '@/lib/import/columnMapper';
 import { FileUploader } from './FileUploader';
 import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw } from 'lucide-react';
 
+import { calculateFileHash, checkDuplicateFileHash, uploadOriginalExcelToStorage, getStoredUserEmail } from '@/lib/datasets/datasetService';
+
 interface QuickUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -69,7 +71,25 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
       const importId = 'imp_' + Math.random().toString(36).substring(2, 9);
       const snapshotId = `snap_${datasetType}_${new Date().toISOString().replace(/[^0-9]/g, '').substring(0, 14)}`;
 
-      // Build mappings using auto-mapped column target fields
+      // 1. Calculate file SHA-256 hash & check duplicate
+      const fileHash = await calculateFileHash(file);
+      if (fileHash) {
+        const duplicate = await checkDuplicateFileHash(fileHash, datasetType);
+        if (duplicate) {
+          const confirmProceed = window.confirm(
+            `Notice: This exact Excel file "${file.name}" was already uploaded on ${new Date(duplicate.uploadedAt).toLocaleDateString()} by ${duplicate.uploadedBy}.\n\nDo you want to upload it again as a new version dataset?`
+          );
+          if (!confirmProceed) {
+            setImporting(false);
+            return;
+          }
+        }
+      }
+
+      // 2. Upload raw Excel file to private Supabase Storage bucket 'finance-excel'
+      const storageResult = await uploadOriginalExcelToStorage(file, datasetType, snapshotId);
+
+      // 3. Build mappings using auto-mapped column target fields
       const mappings = targetSheet.columnMappings.map(m => ({
         excelHeader: m.excelHeader,
         targetField: m.targetField,
@@ -106,19 +126,24 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
         }
       }
 
+      const userEmail = getStoredUserEmail();
+
       const newSnapshot: FinancialSnapshot = {
         id: snapshotId,
         module: datasetType,
         fileName: file.name,
         fileSize: file.size,
         uploadedAt: new Date().toISOString(),
-        uploadedBy: 'Finance User',
+        uploadedBy: userEmail,
         recordCount: transformedTxns.length,
         status: 'active',
         grandTotalOpening,
         grandTotalDebit,
         grandTotalCredit,
         grandTotalClosing,
+        storageBucket: storageResult?.bucket,
+        storagePath: storageResult?.path,
+        fileHash: fileHash || undefined,
       };
 
       await saveSnapshotWithTransactions(newSnapshot, transformedTxns);

@@ -19,11 +19,16 @@ export interface FinancialSnapshot {
   uploadedAt: string; // ISO string
   uploadedBy: string;
   recordCount: number;
-  status: 'active' | 'archived';
+  status: 'active' | 'inactive' | 'archived';
   grandTotalOpening?: number;
   grandTotalDebit?: number;
   grandTotalCredit?: number;
   grandTotalClosing?: number;
+  storageBucket?: string;
+  storagePath?: string;
+  fileHash?: string;
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
 export interface SourceImport {
@@ -189,8 +194,18 @@ export interface AuditLogItem {
   id: string;
   timestamp: string;
   user: string;
-  action: string;
+  action:
+    | 'UPLOAD_DATASET'
+    | 'HIDE_DATASET'
+    | 'RESTORE_DATASET'
+    | 'ARCHIVE_DATASET'
+    | 'DOWNLOAD_DATASET'
+    | 'DELETE_DATASET'
+    | string;
   dataset: string;
   details: string;
   status: 'success' | 'warning' | 'error';
+  module?: string;
+  fileName?: string;
+  metadata?: Record<string, any>;
 }
