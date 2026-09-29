@@ -216,6 +216,9 @@ export const calculateCustomerSummaries = (txns: FinancialTransaction[]): Custom
   txns.forEach(t => {
     if (t.partyType === 'customer' || t.voucherType.toLowerCase().includes('sales') || t.partyName) {
       const name = t.partyName || 'Cash Customer';
+      const normName = name.toLowerCase().trim();
+      if (normName.includes('grand total') || normName === 'total' || normName.startsWith('total ')) return;
+
       const existing = map.get(name) || {
         id: 'cust_' + name,
         name,
@@ -274,6 +277,9 @@ export const calculateVendorSummaries = (txns: FinancialTransaction[]): VendorSu
   txns.forEach(t => {
     if (t.partyType === 'vendor' || t.voucherType.toLowerCase().includes('purchase') || t.partyName) {
       const name = t.partyName || 'Cash Supplier';
+      const normName = name.toLowerCase().trim();
+      if (normName.includes('grand total') || normName === 'total' || normName.startsWith('total ')) return;
+
       const existing = map.get(name) || {
         id: 'vend_' + name,
         name,

@@ -107,7 +107,12 @@ export const getSnapshotTransactions = async (
 
     if (!data) return [];
 
-    return data.map(d => {
+    const validData = data.filter(d => {
+      const p = String(d.party_name || d.particulars || '').toLowerCase().trim();
+      return !p.includes('grand total') && p !== 'total' && !p.startsWith('total ') && p !== 'total vouchers';
+    });
+
+    return validData.map(d => {
       const igst = Number(d.igst) || Number(d.input_igst_silvassa) || Number(d.input_igst_kol) || 0;
       const cgst = Number(d.cgst) || Number(d.input_cgst_silvassa) || Number(d.input_cgst_kol) || 0;
       const sgst = Number(d.sgst) || Number(d.input_sgst_silvassa) || Number(d.input_sgst_kol) || 0;

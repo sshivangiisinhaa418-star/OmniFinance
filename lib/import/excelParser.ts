@@ -300,8 +300,8 @@ export const parseExcelFile = async (file: File): Promise<ParsedWorkbookResult> 
       const nonCount = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '').length;
       if (nonCount === 0) continue;
 
-      const firstVal = String(row[0] || '').toLowerCase().trim();
-      if (firstVal.includes('grand total') || firstVal.startsWith('total')) {
+      const rowStr = row.map(c => String(c ?? '').toLowerCase().trim()).join(' ');
+      if (rowStr.includes('grand total') || rowStr.includes('total vouchers') || /^total\b/.test(rowStr) || rowStr.includes(' total ')) {
         const record: Record<string, any> = {};
         combinedHeaders.forEach((h, colIdx) => {
           record[h] = row[colIdx] !== undefined ? row[colIdx] : '';
@@ -311,12 +311,12 @@ export const parseExcelFile = async (file: File): Promise<ParsedWorkbookResult> 
       }
 
       if (
-        firstVal.includes('group summary') ||
-        firstVal.includes('sundry creditors') ||
-        firstVal.includes('sundry debtors') ||
-        firstVal.includes('creditor for') ||
-        firstVal.includes('debtor for') ||
-        firstVal.includes('debtors of')
+        rowStr.includes('group summary') ||
+        rowStr.includes('sundry creditors') ||
+        rowStr.includes('sundry debtors') ||
+        rowStr.includes('creditor for') ||
+        rowStr.includes('debtor for') ||
+        rowStr.includes('debtors of')
       ) continue;
 
       const record: Record<string, any> = {};
@@ -488,6 +488,32 @@ export const transformSheetToTransactions = (
 
     const primaryDate = row['Date'] || row['date'] || row['Voucher Date'] || row['Voucher date'] || row['Txn Date'] || getRowVal('date');
 
+    const partyNameStr = String(
+      extracted.partyName ||
+        extracted.particulars ||
+        row['Particulars'] ||
+        row['particulars'] ||
+        row['Party Name'] ||
+        row['Name'] ||
+        row.Column_1 ||
+        row.column_1 ||
+        row.Column_0 ||
+        Object.values(row).find(v => v && String(v).trim() !== '') ||
+        'Cash Customer'
+    );
+
+    const partyLower = partyNameStr.toLowerCase().trim();
+    if (
+      partyLower === 'grand total' ||
+      partyLower.includes('grand total') ||
+      partyLower === 'total' ||
+      partyLower.startsWith('total ') ||
+      partyLower === 'total vouchers' ||
+      partyLower.includes('total summary')
+    ) {
+      return null as any;
+    }
+
     return {
       id: `txn_${importId}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
       sourceImportId: importId,
@@ -495,19 +521,7 @@ export const transformSheetToTransactions = (
       voucherNo: String(voucherNoRaw || `VCH-${idx + 1001}`),
       voucherType,
       voucherRefNo: voucherRefNoRaw ? String(voucherRefNoRaw) : undefined,
-      partyName: String(
-        extracted.partyName ||
-          extracted.particulars ||
-          row['Particulars'] ||
-          row['particulars'] ||
-          row['Party Name'] ||
-          row['Name'] ||
-          row.Column_1 ||
-          row.column_1 ||
-          row.Column_0 ||
-          Object.values(row).find(v => v && String(v).trim() !== '') ||
-          'Cash Customer'
-      ),
+      partyName: partyNameStr,
       partyType,
       gstin: gstinRaw ? String(gstinRaw) : undefined,
       panNo: panNoRaw ? String(panNoRaw) : undefined,
@@ -538,5 +552,5 @@ export const transformSheetToTransactions = (
       paymentStatus: (datasetType === 'receivables' || datasetType === 'payables') ? 'unpaid' : 'paid',
       description: extracted.description ? String(extracted.description) : `Imported from ${file.name} [${sheetName}]`,
     };
-  });
+  }).filter(Boolean);
 };

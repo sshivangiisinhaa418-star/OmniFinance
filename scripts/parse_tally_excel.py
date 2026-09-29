@@ -311,10 +311,10 @@ def parse_tally_excel(file_path):
             if not r_vals:
                 continue
 
-            first_val = r_vals[0].lower()
+            r_str = " ".join(r_vals).lower().strip()
             
             # Skip metadata/summary rows (but extract Grand Total)
-            if 'grand total' in first_val or first_val.startswith('total'):
+            if 'grand total' in r_str or 'total vouchers' in r_str or r_str.startswith('total') or ' total ' in r_str:
                 # Extract Grand Total values
                 gt_record = {}
                 for c_idx, h_name in enumerate(final_headers):
@@ -323,13 +323,14 @@ def parse_tally_excel(file_path):
                 grand_total = gt_record
                 continue
             
+            first_val = r_vals[0].lower()
             if (
-                'group summary' in first_val or
-                'sundry creditors' in first_val or
-                'sundry debtors' in first_val or
-                'creditor for' in first_val or
-                'debtor for' in first_val or
-                'debtors of' in first_val or
+                'group summary' in r_str or
+                'sundry creditors' in r_str or
+                'sundry debtors' in r_str or
+                'creditor for' in r_str or
+                'debtor for' in r_str or
+                'debtors of' in r_str or
                 'creditors' == first_val.strip()
             ):
                 continue
