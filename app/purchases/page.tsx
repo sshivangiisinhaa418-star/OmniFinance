@@ -235,15 +235,18 @@ export default function PurchasesPage() {
     (acc, t) => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
       const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
-      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
-      const val = t.value || sale || gross;
+      const purchase = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const val = t.value || purchase || gross;
 
       acc.quantity += t.quantity || 0;
       acc.value += val;
       acc.grossTotal += gross;
+      acc.purchase += purchase;
       acc.igst += t.igst || 0;
+      acc.roundOff += t.roundOff || 0;
       acc.cgst += t.cgst || 0;
       acc.sgst += t.sgst || 0;
+      acc.workContract += t.workContract || 0;
       acc.transportationCharges += t.transportationCharges || 0;
       return acc;
     },
@@ -251,9 +254,12 @@ export default function PurchasesPage() {
       quantity: 0,
       value: 0,
       grossTotal: 0,
+      purchase: 0,
       igst: 0,
+      roundOff: 0,
       cgst: 0,
       sgst: 0,
+      workContract: 0,
       transportationCharges: 0,
     }
   );
@@ -271,19 +277,42 @@ export default function PurchasesPage() {
 
   const exportPurchasesCSV = () => {
     if (!filteredTxns.length) return;
-    const headers = ['Date', 'Particulars', 'Voucher Type', 'Voucher No.', 'GSTIN', 'Quantity', 'Value', 'Gross Total', 'IGST', 'CGST', 'SGST', 'Transportation'];
+    const headers = [
+      'Date',
+      'Particulars',
+      'Voucher Type',
+      'Voucher No.',
+      'Voucher Ref. No.',
+      'GSTIN/UIN',
+      'PAN No.',
+      'Quantity',
+      'Value',
+      'Gross Total',
+      'Purchases A/c',
+      'IGST',
+      'Round Off',
+      'CGST',
+      'SGST',
+      'Work Contract',
+      'Transportation Charges',
+    ];
     const rows = filteredTxns.map(t => [
       t.date || '',
       `"${(t.partyName || '').replace(/"/g, '""')}"`,
       `"${t.voucherType || 'Purchase'}"`,
       `"${t.voucherNo || ''}"`,
+      `"${t.voucherRefNo || ''}"`,
       `"${t.gstin || ''}"`,
+      `"${t.panNo || ''}"`,
       t.quantity || 0,
       t.value || 0,
       t.grossTotal || t.totalAmount || 0,
+      t.saleAmount || t.value || 0,
       t.igst || 0,
+      t.roundOff || 0,
       t.cgst || 0,
       t.sgst || 0,
+      t.workContract || 0,
       t.transportationCharges || 0
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -590,8 +619,14 @@ export default function PurchasesPage() {
                 <th onClick={() => handleSort('voucherNo')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center gap-1"><span>Voucher No.</span>{sortField === 'voucherNo' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
                 </th>
+                <th onClick={() => handleSort('voucherRefNo')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 cursor-pointer hover:text-orange-500 transition">
+                  <div className="flex items-center gap-1"><span>Voucher Ref. No.</span>{sortField === 'voucherRefNo' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
+                </th>
                 <th onClick={() => handleSort('gstin')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center gap-1"><span>GSTIN/UIN</span>{sortField === 'gstin' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
+                </th>
+                <th onClick={() => handleSort('panNo')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 cursor-pointer hover:text-orange-500 transition">
+                  <div className="flex items-center gap-1"><span>PAN No.</span>{sortField === 'panNo' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
                 </th>
                 <th onClick={() => handleSort('quantity')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center justify-end gap-1"><span>Quantity</span>{sortField === 'quantity' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
@@ -602,14 +637,23 @@ export default function PurchasesPage() {
                 <th onClick={() => handleSort('grossTotal')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center justify-end gap-1"><span>Gross Total</span>{sortField === 'grossTotal' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
                 </th>
+                <th onClick={() => handleSort('saleAmount')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
+                  <div className="flex items-center justify-end gap-1"><span>Purchases A/c</span>{sortField === 'saleAmount' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
+                </th>
                 <th onClick={() => handleSort('igst')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center justify-end gap-1"><span>IGST</span>{sortField === 'igst' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
+                </th>
+                <th onClick={() => handleSort('roundOff')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
+                  <div className="flex items-center justify-end gap-1"><span>Round Off</span>{sortField === 'roundOff' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
                 </th>
                 <th onClick={() => handleSort('cgst')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center justify-end gap-1"><span>CGST</span>{sortField === 'cgst' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
                 </th>
                 <th onClick={() => handleSort('sgst')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center justify-end gap-1"><span>SGST</span>{sortField === 'sgst' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
+                </th>
+                <th onClick={() => handleSort('workContract')} className="py-3 px-3 border-r border-stone-200 dark:border-stone-800 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
+                  <div className="flex items-center justify-end gap-1"><span>Work Contract</span>{sortField === 'workContract' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
                 </th>
                 <th onClick={() => handleSort('transportationCharges')} className="py-3 px-3 bg-stone-100 dark:bg-stone-950 text-right cursor-pointer hover:text-orange-500 transition">
                   <div className="flex items-center justify-end gap-1"><span>Transportation</span>{sortField === 'transportationCharges' ? (sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-orange-500" /> : <ArrowDown className="w-3 h-3 text-orange-500" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}</div>
@@ -620,7 +664,7 @@ export default function PurchasesPage() {
             <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-stone-400 font-medium">
+                  <td colSpan={17} className="py-8 text-center text-stone-400 font-medium">
                     No purchase transaction records found matching your filter criteria.
                   </td>
                 </tr>
@@ -644,8 +688,14 @@ export default function PurchasesPage() {
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 font-semibold font-mono text-stone-800 dark:text-stone-200">
                       {t.voucherNo}
                     </td>
+                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-stone-500 font-mono text-[11px]">
+                      {t.voucherRefNo || '-'}
+                    </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 font-mono text-[11px]">
                       {t.gstin || '-'}
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 font-mono text-[11px]">
+                      {t.panNo || '-'}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-700 dark:text-stone-300">
                       {(t.quantity || 0).toLocaleString('en-IN')}
@@ -656,14 +706,23 @@ export default function PurchasesPage() {
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
                       {fmt(t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + (t.igst||0) + (t.cgst||0) + (t.sgst||0) : 0))}
                     </td>
+                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                      {fmt(t.saleAmount || t.value || t.grossTotal)}
+                    </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.igst)}
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-500">
+                      {fmt(t.roundOff)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.cgst)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.sgst)}
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
+                      {fmt(t.workContract)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.transportationCharges)}
@@ -677,7 +736,7 @@ export default function PurchasesPage() {
             {filteredTxns.length > 0 && (
               <tfoot className="bg-stone-100 dark:bg-stone-950 font-black text-xs border-t-2 border-stone-300 dark:border-stone-700 uppercase tracking-wide">
                 <tr className="bg-orange-500/10 dark:bg-orange-500/10 text-stone-900 dark:text-white">
-                  <td colSpan={5} className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-black text-orange-600 dark:text-orange-400">
+                  <td colSpan={7} className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-black text-orange-600 dark:text-orange-400">
                     Grand Total ({filteredTxns.length} Records):
                   </td>
                   <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
@@ -689,14 +748,23 @@ export default function PurchasesPage() {
                   <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono text-orange-600 dark:text-orange-400 text-sm">
                     {fmt(grandTotals.grossTotal)}
                   </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono text-emerald-600 dark:text-emerald-400 text-sm">
+                    {fmt(grandTotals.purchase)}
+                  </td>
                   <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
                     {fmt(grandTotals.igst)}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {fmt(grandTotals.roundOff)}
                   </td>
                   <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
                     {fmt(grandTotals.cgst)}
                   </td>
                   <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
                     {fmt(grandTotals.sgst)}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {fmt(grandTotals.workContract)}
                   </td>
                   <td className="py-3 px-3 text-right font-mono">
                     {fmt(grandTotals.transportationCharges)}
