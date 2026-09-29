@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
-import { ShieldCheck, Lock, Loader2 } from 'lucide-react';
+import { Lock, Loader2 } from 'lucide-react';
 
 export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
@@ -13,6 +13,33 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
   // Standalone public routes bypass AuthGuard completely to prevent redirect loops
   const isPublicRoute = pathname === '/login' || pathname === '/auth/callback';
 
+  const checkHasValidSession = async (): Promise<boolean> => {
+    // 1. Check Supabase session first
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) return true;
+      } catch (err) {
+        console.error('Session verification error:', err);
+      }
+    }
+
+    // 2. Check local fallback session
+    if (typeof window !== 'undefined') {
+      const localSession = localStorage.getItem('tally_user_session');
+      if (localSession) {
+        try {
+          const parsed = JSON.parse(localSession);
+          if (parsed && (parsed.email || parsed.name)) return true;
+        } catch (e) {
+          localStorage.removeItem('tally_user_session');
+        }
+      }
+    }
+
+    return false;
+  };
+
   useEffect(() => {
     if (isPublicRoute) {
       setIsAuthenticated(true);
@@ -21,38 +48,11 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
 
     let isMounted = true;
 
-    const checkAuth = async () => {
-      let authenticated = false;
-
-      // Check Supabase Auth session if configured
-      if (isSupabaseConfigured() && supabase) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            authenticated = true;
-          }
-        } catch (err) {
-          console.error('Session verification error:', err);
-        }
-      }
-
-      // Check Local session fallback if Supabase auth is not active or empty
-      if (!authenticated) {
-        const localSession = localStorage.getItem('tally_user_session');
-        if (localSession) {
-          try {
-            const parsed = JSON.parse(localSession);
-            if (parsed && parsed.email) {
-              authenticated = true;
-            }
-          } catch (e) {
-            localStorage.removeItem('tally_user_session');
-          }
-        }
-      }
+    const performAuthCheck = async () => {
+      const isAuthed = await checkHasValidSession();
 
       if (isMounted) {
-        if (!authenticated) {
+        if (!isAuthed) {
           setIsAuthenticated(false);
           router.replace('/login');
         } else {
@@ -61,16 +61,27 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
       }
     };
 
-    checkAuth();
+    performAuthCheck();
 
     // Listen for auth state changes if Supabase is enabled
     if (isSupabaseConfigured() && supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (!session && !isPublicRoute) {
-          setIsAuthenticated(false);
-          router.replace('/login');
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          localStorage.removeItem('tally_user_session');
+          if (isMounted && !isPublicRoute) {
+            setIsAuthenticated(false);
+            router.replace('/login');
+          }
+        } else if (!session) {
+          // Check if local session exists before forcing redirect
+          const localAuthed = await checkHasValidSession();
+          if (!localAuthed && isMounted && !isPublicRoute) {
+            setIsAuthenticated(false);
+            router.replace('/login');
+          }
         }
       });
+
       return () => {
         isMounted = false;
         subscription.unsubscribe();

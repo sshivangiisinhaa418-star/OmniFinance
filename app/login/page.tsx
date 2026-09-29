@@ -38,23 +38,31 @@ export default function LoginPage() {
   // If already logged in, redirect straight to dashboard
   useEffect(() => {
     const verifyExistingSession = async () => {
+      let authed = false;
       if (isSupabaseConfigured() && supabase) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          router.replace('/');
-          return;
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) authed = true;
+        } catch (err) {
+          console.error('Login session check error:', err);
         }
       }
-      const localSession = localStorage.getItem('tally_user_session');
-      if (localSession) {
-        try {
-          const parsed = JSON.parse(localSession);
-          if (parsed && parsed.email) {
-            router.replace('/');
+      if (!authed) {
+        const localSession = localStorage.getItem('tally_user_session');
+        if (localSession) {
+          try {
+            const parsed = JSON.parse(localSession);
+            if (parsed && (parsed.email || parsed.name)) {
+              authed = true;
+            }
+          } catch (e) {
+            localStorage.removeItem('tally_user_session');
           }
-        } catch (e) {
-          localStorage.removeItem('tally_user_session');
         }
+      }
+
+      if (authed) {
+        router.replace('/');
       }
     };
     verifyExistingSession();
