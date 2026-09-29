@@ -431,7 +431,7 @@ export default function LoginPage() {
           Email verification enforced. Access attempts are logged.
         </p>
         <p className="text-[9px] text-stone-700/60 font-mono tracking-widest select-none pt-2 opacity-50 hover:opacity-100 transition-opacity">
-          vXE.1.0
+          vXE.10.0
         </p>
       </div>
     </div>
