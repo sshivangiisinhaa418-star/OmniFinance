@@ -96,10 +96,15 @@ export default function SalesPage() {
   // Calculate totals for all 10 numeric columns
   const grandTotals = filteredTxns.reduce(
     (acc, t) => {
+      const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
+      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const val = t.value || sale || gross;
+
       acc.quantity += t.quantity || 0;
-      acc.value += t.value || 0;
-      acc.grossTotal += t.grossTotal || 0;
-      acc.sale += t.saleAmount || 0;
+      acc.value += val;
+      acc.grossTotal += gross;
+      acc.sale += sale;
       acc.igst += t.igst || 0;
       acc.roundOff += t.roundOff || 0;
       acc.cgst += t.cgst || 0;
@@ -466,13 +471,13 @@ export default function SalesPage() {
                       {(t.quantity || 0).toLocaleString('en-IN')}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-800 dark:text-stone-200 font-medium">
-                      {fmtCurrency(t.value)}
+                      {fmtCurrency(t.value || t.saleAmount || t.grossTotal)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
-                      {fmtCurrency(t.grossTotal)}
+                      {fmtCurrency(t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + (t.igst||0) + (t.cgst||0) + (t.sgst||0) : 0))}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {fmtCurrency(t.saleAmount)}
+                      {fmtCurrency(t.saleAmount || t.value || t.grossTotal)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmtCurrency(t.igst)}

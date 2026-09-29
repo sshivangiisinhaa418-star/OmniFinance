@@ -231,6 +231,33 @@ export default function PurchasesPage() {
     return 0;
   });
 
+  const grandTotals = filteredTxns.reduce(
+    (acc, t) => {
+      const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
+      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const val = t.value || sale || gross;
+
+      acc.quantity += t.quantity || 0;
+      acc.value += val;
+      acc.grossTotal += gross;
+      acc.igst += t.igst || 0;
+      acc.cgst += t.cgst || 0;
+      acc.sgst += t.sgst || 0;
+      acc.transportationCharges += t.transportationCharges || 0;
+      return acc;
+    },
+    {
+      quantity: 0,
+      value: 0,
+      grossTotal: 0,
+      igst: 0,
+      cgst: 0,
+      sgst: 0,
+      transportationCharges: 0,
+    }
+  );
+
   const totalPages = Math.max(1, Math.ceil(sortedTxns.length / pageSize));
   const startIndex = (currentPage - 1) * pageSize;
   const paginatedData = sortedTxns.slice(startIndex, startIndex + pageSize);
@@ -624,10 +651,10 @@ export default function PurchasesPage() {
                       {(t.quantity || 0).toLocaleString('en-IN')}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-800 dark:text-stone-200 font-medium">
-                      {fmt(t.value)}
+                      {fmt(t.value || t.saleAmount || t.grossTotal || t.amount)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
-                      {fmt(t.grossTotal || t.value || t.amount)}
+                      {fmt(t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + (t.igst||0) + (t.cgst||0) + (t.sgst||0) : 0))}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.igst)}
@@ -645,6 +672,38 @@ export default function PurchasesPage() {
                 ))
               )}
             </tbody>
+
+            {/* GRAND TOTAL FOOTER */}
+            {filteredTxns.length > 0 && (
+              <tfoot className="bg-stone-100 dark:bg-stone-950 font-black text-xs border-t-2 border-stone-300 dark:border-stone-700 uppercase tracking-wide">
+                <tr className="bg-orange-500/10 dark:bg-orange-500/10 text-stone-900 dark:text-white">
+                  <td colSpan={5} className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-black text-orange-600 dark:text-orange-400">
+                    Grand Total ({filteredTxns.length} Records):
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {grandTotals.quantity.toLocaleString('en-IN')}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {fmt(grandTotals.value)}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono text-orange-600 dark:text-orange-400 text-sm">
+                    {fmt(grandTotals.grossTotal)}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {fmt(grandTotals.igst)}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {fmt(grandTotals.cgst)}
+                  </td>
+                  <td className="py-3 px-3 text-right border-r border-stone-300 dark:border-stone-700 font-mono">
+                    {fmt(grandTotals.sgst)}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono">
+                    {fmt(grandTotals.transportationCharges)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 

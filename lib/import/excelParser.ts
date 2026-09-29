@@ -432,16 +432,16 @@ export const transformSheetToTransactions = (
     const gstinRaw = getRowVal('gstin', 'GSTIN/UIN', 'GSTIN', 'UIN', 'Party GSTIN');
     const panNoRaw = getRowVal('panNo', 'PAN No.', 'PAN No', 'PAN', 'PAN Number');
 
-    const rawQty = getRowVal('quantity', 'Quantity', 'Qty', 'Units');
-    const rawVal = getRowVal('value', 'Value', 'Taxable Value', 'Assessable Value');
-    const rawGross = getRowVal('grossTotal', 'Gross Total', 'Total Amount', 'Invoice Value', 'Bill Amount');
-    const rawSale = getRowVal('saleAmount', 'Sale', 'Sales', 'Purchases A/c', 'Purchases Ac', 'Purchase', 'Purchase Amount');
-    const rawIgst = getRowVal('igst', 'IGST', 'Integrated Tax', 'Input IGST Silvassa', 'Input IGST KOL');
-    const rawCgst = getRowVal('cgst', 'CGST', 'Central Tax', 'Input CGST Silvassa', 'Input CGST KOL');
-    const rawSgst = getRowVal('sgst', 'SGST', 'State Tax', 'Input SGST Silvassa', 'Input SGST KOL');
-    const rawRound = getRowVal('roundOff', 'Round Off', 'Roundoff', 'Rounding');
+    const rawQty = getRowVal('quantity', 'Quantity', 'Qty', 'Units', 'PCS', 'Nos', 'Bags', 'Kgs', 'Mtrs');
+    const rawVal = getRowVal('value', 'Value', 'Taxable Value', 'Assessable Value', 'Taxable Amt', 'Taxable Amount', 'Amount (Taxable)');
+    const rawGross = getRowVal('grossTotal', 'Gross Total', 'Total Amount', 'Invoice Value', 'Bill Amount', 'Net Amount', 'Total Value', 'Total', 'Voucher Amount', 'Billed Amount');
+    const rawSale = getRowVal('saleAmount', 'Sale', 'Sales', 'Sales A/c', 'Sales Ac', 'Purchases A/c', 'Purchases Ac', 'Purchase', 'Purchase Amount', 'Purchases', 'Purchase A/c', 'Purchase Ac', 'Purchases Account', 'Sales Account');
+    const rawIgst = getRowVal('igst', 'IGST', 'Integrated Tax', 'Input IGST Silvassa', 'Input IGST KOL', 'Input IGST', 'Output IGST', 'IGST Amount');
+    const rawCgst = getRowVal('cgst', 'CGST', 'Central Tax', 'Input CGST Silvassa', 'Input CGST KOL', 'Input CGST', 'Output CGST', 'CGST Amount');
+    const rawSgst = getRowVal('sgst', 'SGST', 'State Tax', 'Input SGST Silvassa', 'Input SGST KOL', 'Input SGST', 'Output SGST', 'SGST Amount');
+    const rawRound = getRowVal('roundOff', 'Round Off', 'Roundoff', 'Rounding', 'Round-off', 'Round Off Amt');
     const rawWork = getRowVal('workContract', 'Work Contract', 'Works Contract');
-    const rawTrans = getRowVal('transportationCharges', 'Transportation Charges', 'Freight', 'Transport Charges', 'Transportation Expenses');
+    const rawTrans = getRowVal('transportationCharges', 'Transportation Charges', 'Freight', 'Transport Charges', 'Transportation Expenses', 'Freight Charges');
 
     const debit = parseAmount(getRowVal('debit', 'Debit', 'Dr'));
     const credit = parseAmount(getRowVal('credit', 'Credit', 'Cr'));
@@ -450,12 +450,37 @@ export const transformSheetToTransactions = (
       ? parseBalanceAmount(getRowVal('closingBalance', 'Closing Balance', 'Closing'), isPayable)
       : (isPayable ? openingBalance + credit - debit : openingBalance + debit - credit);
 
-    const grossTotal = parseAmount(rawGross);
-    const saleAmount = parseAmount(rawSale);
-    const value = parseAmount(rawVal || saleAmount || grossTotal);
-    const totalAmount = grossTotal || Math.abs(closingBalance) || (debit || credit || parseAmount(getRowVal('totalAmount', 'amount', 'Amount')));
-    const amount = parseAmount(rawSale || rawGross || getRowVal('amount', 'Amount') || totalAmount);
-    const taxAmount = parseAmount(getRowVal('taxAmount', 'Tax Amount')) || (parseAmount(rawIgst) + parseAmount(rawCgst) + parseAmount(rawSgst));
+    const igstVal = parseAmount(rawIgst);
+    const cgstVal = parseAmount(rawCgst);
+    const sgstVal = parseAmount(rawSgst);
+    const taxAmount = parseAmount(getRowVal('taxAmount', 'Tax Amount', 'Tax')) || (igstVal + cgstVal + sgstVal);
+
+    let parsedGross = parseAmount(rawGross);
+    let parsedSale = parseAmount(rawSale);
+    let parsedVal = parseAmount(rawVal);
+    let parsedAmt = parseAmount(getRowVal('amount', 'Amount'));
+    let parsedTotal = parseAmount(getRowVal('totalAmount', 'Total Amount'));
+
+    // Smart financial cross-fallbacks
+    if (!parsedSale && parsedVal) parsedSale = parsedVal;
+    if (!parsedSale && parsedAmt) parsedSale = parsedAmt;
+    if (!parsedSale && parsedGross) parsedSale = parsedGross > taxAmount ? parsedGross - taxAmount : parsedGross;
+    if (!parsedSale && parsedTotal) parsedSale = parsedTotal > taxAmount ? parsedTotal - taxAmount : parsedTotal;
+
+    if (!parsedVal && parsedSale) parsedVal = parsedSale;
+    if (!parsedVal && parsedGross) parsedVal = parsedGross > taxAmount ? parsedGross - taxAmount : parsedGross;
+    if (!parsedVal && parsedAmt) parsedVal = parsedAmt;
+
+    if (!parsedGross && parsedSale) parsedGross = parsedSale + taxAmount;
+    if (!parsedGross && parsedVal) parsedGross = parsedVal + taxAmount;
+    if (!parsedGross && parsedAmt) parsedGross = parsedAmt;
+    if (!parsedGross && parsedTotal) parsedGross = parsedTotal;
+
+    const grossTotal = parsedGross;
+    const saleAmount = parsedSale;
+    const value = parsedVal || saleAmount || grossTotal;
+    const totalAmount = parsedTotal || grossTotal || saleAmount || value || parsedAmt || Math.abs(closingBalance);
+    const amount = parsedAmt || saleAmount || grossTotal || value || totalAmount;
 
     const primaryDate = row['Date'] || row['date'] || row['Voucher Date'] || row['Voucher date'] || row['Txn Date'] || getRowVal('date');
 

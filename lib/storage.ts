@@ -107,51 +107,61 @@ export const getSnapshotTransactions = async (
 
     if (!data) return [];
 
-    return data.map(d => ({
-      id: d.id,
-      snapshotId: d.snapshot_id,
-      sourceImportId: d.source_import_id,
-      datasetType: module,
-      date: d.transaction_date,
-      voucherNo: d.voucher_number || `VCH-${d.id}`,
-      voucherType: d.voucher_type || (module === 'sales' ? 'Sales' : module === 'purchases' ? 'Purchase' : 'Journal'),
-      voucherRefNo: d.voucher_ref_no || '',
-      partyName: d.party_name || d.particulars || 'Cash Customer',
-      partyType: d.party_type || (module === 'receivables' || module === 'sales' ? 'customer' : 'vendor'),
-      gstin: d.gstin || '',
-      panNo: d.pan_no || '',
-      ledgerName: d.ledger_name || (module === 'sales' ? 'Sales Account' : 'General Ledger'),
-      ledgerCategory: module,
-      itemName: d.item_name,
-      itemCategory: d.item_category,
-      quantity: Number(d.quantity) || 0,
-      rate: Number(d.rate) || 0,
-      // value: the base taxable value (before GST)
-      value: Number(d.value) || 0,
-      // grossTotal: the total invoice value including all taxes
-      grossTotal: Number(d.gross_total) || 0,
-      // saleAmount: the "Sale" or "Purchases A/c" ledger amount
-      saleAmount: module === 'purchases'
-        ? (Number(d.purchases_ac) || Number(d.sale_amount) || 0)
-        : (Number(d.sale_amount) || 0),
-      roundOff: Number(d.round_off) || 0,
-      cgst: Number(d.cgst) || Number(d.input_cgst_silvassa) || Number(d.input_cgst_kol) || 0,
-      sgst: Number(d.sgst) || Number(d.input_sgst_silvassa) || Number(d.input_sgst_kol) || 0,
-      igst: Number(d.igst) || Number(d.input_igst_silvassa) || Number(d.input_igst_kol) || 0,
-      workContract: Number(d.work_contract) || 0,
-      transportationCharges: Number(d.transportation_charges) || Number(d.transportation_expenses) || Number(d.transportation_expenses_rajmahal) || 0,
-      openingBalance: Number(d.opening_balance) || 0,
-      closingBalance: Number(d.closing_balance) || 0,
-      debit: Number(d.debit) || 0,
-      credit: Number(d.credit) || 0,
-      amount: Number(d.amount) || 0,
-      taxAmount: Number(d.tax_amount) || (Number(d.igst || 0) + Number(d.cgst || 0) + Number(d.sgst || 0)),
-      totalAmount: Number(d.total_amount) || Number(d.gross_total) || 0,
-      dueDate: d.due_date,
-      overdueDays: Number(d.overdue_days) || 0,
-      paymentStatus: d.payment_status || 'paid',
-      description: d.description,
-    }));
+    return data.map(d => {
+      const igst = Number(d.igst) || Number(d.input_igst_silvassa) || Number(d.input_igst_kol) || 0;
+      const cgst = Number(d.cgst) || Number(d.input_cgst_silvassa) || Number(d.input_cgst_kol) || 0;
+      const sgst = Number(d.sgst) || Number(d.input_sgst_silvassa) || Number(d.input_sgst_kol) || 0;
+      const taxSum = igst + cgst + sgst;
+
+      const rawGross = Number(d.gross_total) || Number(d.total_amount) || Number(d.amount) || 0;
+      const rawSale = Number(d.sale_amount) || Number(d.purchases_ac) || Number(d.value) || 0;
+      const rawValue = Number(d.value) || rawSale || (rawGross > taxSum ? rawGross - taxSum : rawGross);
+
+      const grossTotal = rawGross || (rawValue ? rawValue + taxSum : 0);
+      const saleAmount = rawSale || rawValue || grossTotal;
+      const value = rawValue || saleAmount || grossTotal;
+
+      return {
+        id: d.id,
+        snapshotId: d.snapshot_id,
+        sourceImportId: d.source_import_id,
+        datasetType: module,
+        date: d.transaction_date,
+        voucherNo: d.voucher_number || `VCH-${d.id}`,
+        voucherType: d.voucher_type || (module === 'sales' ? 'Sales' : module === 'purchases' ? 'Purchase' : 'Journal'),
+        voucherRefNo: d.voucher_ref_no || '',
+        partyName: d.party_name || d.particulars || 'Cash Customer',
+        partyType: d.party_type || (module === 'receivables' || module === 'sales' ? 'customer' : 'vendor'),
+        gstin: d.gstin || '',
+        panNo: d.pan_no || '',
+        ledgerName: d.ledger_name || (module === 'sales' ? 'Sales Account' : 'General Ledger'),
+        ledgerCategory: module,
+        itemName: d.item_name,
+        itemCategory: d.item_category,
+        quantity: Number(d.quantity) || 0,
+        rate: Number(d.rate) || 0,
+        value,
+        grossTotal,
+        saleAmount,
+        roundOff: Number(d.round_off) || 0,
+        cgst,
+        sgst,
+        igst,
+        workContract: Number(d.work_contract) || 0,
+        transportationCharges: Number(d.transportation_charges) || Number(d.transportation_expenses) || Number(d.transportation_expenses_rajmahal) || 0,
+        openingBalance: Number(d.opening_balance) || 0,
+        closingBalance: Number(d.closing_balance) || 0,
+        debit: Number(d.debit) || 0,
+        credit: Number(d.credit) || 0,
+        amount: Number(d.amount) || saleAmount || grossTotal,
+        taxAmount: Number(d.tax_amount) || taxSum,
+        totalAmount: Number(d.total_amount) || grossTotal || saleAmount,
+        dueDate: d.due_date,
+        overdueDays: Number(d.overdue_days) || 0,
+        paymentStatus: d.payment_status || 'paid',
+        description: d.description,
+      };
+    });
   } catch (err) {
     console.error(`Failed to fetch transactions from Supabase table ${tableName}`, err);
     return [];
@@ -196,29 +206,35 @@ export const saveSnapshotWithTransactions = async (
   let rows: any[] = [];
 
   if (snapshot.module === 'sales') {
-    rows = newTxns.map(t => ({
-      id: t.id,
-      snapshot_id: snapshot.id,
-      source_import_id: t.sourceImportId,
-      transaction_date: t.date || new Date().toISOString().substring(0, 10),
-      particulars: t.partyName || 'Cash Customer',
-      party_name: t.partyName || 'Cash Customer',
-      voucher_type: t.voucherType || 'Sales',
-      voucher_number: t.voucherNo || `VCH-${t.id}`,
-      voucher_ref_no: t.voucherRefNo || '',
-      gstin: t.gstin || '',
-      pan_no: t.panNo || '',
-      quantity: t.quantity || 0,
-      value: t.value || 0,
-      gross_total: t.grossTotal || 0,
-      sale_amount: t.saleAmount || 0,
-      igst: t.igst || 0,
-      round_off: t.roundOff || 0,
-      cgst: t.cgst || 0,
-      sgst: t.sgst || 0,
-      work_contract: t.workContract || 0,
-      transportation_charges: t.transportationCharges || 0,
-    }));
+    rows = newTxns.map(t => {
+      const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
+      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const val = t.value || sale || gross;
+      return {
+        id: t.id,
+        snapshot_id: snapshot.id,
+        source_import_id: t.sourceImportId,
+        transaction_date: t.date || new Date().toISOString().substring(0, 10),
+        particulars: t.partyName || 'Cash Customer',
+        party_name: t.partyName || 'Cash Customer',
+        voucher_type: t.voucherType || 'Sales',
+        voucher_number: t.voucherNo || `VCH-${t.id}`,
+        voucher_ref_no: t.voucherRefNo || '',
+        gstin: t.gstin || '',
+        pan_no: t.panNo || '',
+        quantity: t.quantity || 0,
+        value: val,
+        gross_total: gross,
+        sale_amount: sale,
+        igst: t.igst || 0,
+        round_off: t.roundOff || 0,
+        cgst: t.cgst || 0,
+        sgst: t.sgst || 0,
+        work_contract: t.workContract || 0,
+        transportation_charges: t.transportationCharges || 0,
+      };
+    });
   } else if (snapshot.module === 'receivables') {
     rows = newTxns.map(t => ({
       id: t.id,
@@ -290,35 +306,41 @@ export const saveSnapshotWithTransactions = async (
       amount: t.amount || t.credit || 0,
     }));
   } else if (snapshot.module === 'purchases') {
-    rows = newTxns.map(t => ({
-      id: t.id,
-      snapshot_id: snapshot.id,
-      source_import_id: t.sourceImportId,
-      transaction_date: t.date || new Date().toISOString().substring(0, 10),
-      particulars: t.partyName || 'Vendor',
-      party_name: t.partyName || 'Vendor',
-      voucher_number: t.voucherNo || `VCH-${t.id}`,
-      voucher_type: t.voucherType || 'Purchase',
-      ledger_name: t.ledgerName || 'Purchase Account',
-      item_name: t.itemName,
-      item_category: t.itemCategory,
-      gstin: t.gstin || '',
-      pan_no: t.panNo || '',
-      quantity: t.quantity || 0,
-      rate: t.rate || 0,
-      value: t.value || t.saleAmount || 0,
-      gross_total: t.grossTotal || 0,
-      purchases_ac: t.saleAmount || 0,
-      amount: t.amount || t.grossTotal || 0,
-      tax_amount: t.taxAmount || ((t.igst || 0) + (t.cgst || 0) + (t.sgst || 0)),
-      total_amount: t.totalAmount || t.grossTotal || 0,
-      round_off: t.roundOff || 0,
-      input_igst_silvassa: t.igst || 0,
-      input_cgst_silvassa: t.cgst || 0,
-      input_sgst_silvassa: t.sgst || 0,
-      transportation_expenses: t.transportationCharges || 0,
-      description: t.description,
-    }));
+    rows = newTxns.map(t => {
+      const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
+      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const val = t.value || sale || gross;
+      return {
+        id: t.id,
+        snapshot_id: snapshot.id,
+        source_import_id: t.sourceImportId,
+        transaction_date: t.date || new Date().toISOString().substring(0, 10),
+        particulars: t.partyName || 'Vendor',
+        party_name: t.partyName || 'Vendor',
+        voucher_number: t.voucherNo || `VCH-${t.id}`,
+        voucher_type: t.voucherType || 'Purchase',
+        ledger_name: t.ledgerName || 'Purchase Account',
+        item_name: t.itemName,
+        item_category: t.itemCategory,
+        gstin: t.gstin || '',
+        pan_no: t.panNo || '',
+        quantity: t.quantity || 0,
+        rate: t.rate || 0,
+        value: val,
+        gross_total: gross,
+        purchases_ac: sale,
+        amount: gross || val,
+        tax_amount: t.taxAmount || taxSum,
+        total_amount: gross || val,
+        round_off: t.roundOff || 0,
+        input_igst_silvassa: t.igst || 0,
+        input_cgst_silvassa: t.cgst || 0,
+        input_sgst_silvassa: t.sgst || 0,
+        transportation_expenses: t.transportationCharges || 0,
+        description: t.description,
+      };
+    });
   } else {
     rows = newTxns.map(t => ({
       id: t.id,
