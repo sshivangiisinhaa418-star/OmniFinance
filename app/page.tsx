@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   getLatestSnapshotForModule,
   getActiveTransactionsForModule,
 } from '@/lib/storage';
 import { FinancialTransaction, FinancialSnapshot } from '@/types';
 import { calculateMonthlyTrends, parseMonthAndYear } from '@/lib/finance/calculations';
+import { runFinancialAuditScan } from '@/lib/finance/auditScanner';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
+import { AuditHealthCard } from '@/components/dashboard/AuditHealthCard';
 import {
   DollarSign,
   TrendingUp,
@@ -177,6 +179,16 @@ export default function ExecutiveSummaryPage() {
   const rawMasterTxns = [...salesData.txns, ...purchasesData.txns, ...receivablesData.txns, ...payablesData.txns, ...paymentsData.txns];
   const activeMasterTxns = [...activeSalesTxns, ...activePurchasesTxns, ...activeReceivablesTxns, ...activePayablesTxns, ...activePaymentsTxns];
 
+  const auditSummary = useMemo(() => {
+    return runFinancialAuditScan({
+      sales: activeSalesTxns,
+      purchases: activePurchasesTxns,
+      receivables: activeReceivablesTxns,
+      payables: activePayablesTxns,
+      payments: activePaymentsTxns,
+    });
+  }, [activeSalesTxns, activePurchasesTxns, activeReceivablesTxns, activePayablesTxns, activePaymentsTxns]);
+
   const hasAnyData = rawMasterTxns.length > 0;
   const isDateFilteredEmpty = dateFilterActive && activeMasterTxns.length === 0;
 
@@ -276,6 +288,9 @@ export default function ExecutiveSummaryPage() {
               iconColor="text-emerald-400"
             />
           </div>
+
+          {/* AI FINANCIAL AUDIT & COMPLIANCE SCANNER CENTER */}
+          <AuditHealthCard summary={auditSummary} />
 
           {/* SECTION 2: 4 MODULE SUMMARY CARDS GRID */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

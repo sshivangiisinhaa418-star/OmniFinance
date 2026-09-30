@@ -44,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
   const pathname = usePathname();
   const menuItems = [
     { label: 'Executive Summary', href: '/', icon: LayoutDashboard, badge: 'Summary' },
+    { label: 'AI Audit Center', href: '/audit', icon: ShieldCheck, badge: 'Audit' },
     { label: 'Sales Transactions', href: '/sales', icon: TrendingUp, dbTable: 'sales_transactions' },
     { label: 'Receivables Transactions', href: '/receivables', icon: Clock, dbTable: 'receivables_transactions' },
     { label: 'Purchases Transactions', href: '/purchases', icon: ShoppingBag, dbTable: 'purchases_transactions' },
