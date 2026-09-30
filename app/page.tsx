@@ -48,6 +48,8 @@ import {
   Bar
 } from 'recharts';
 
+import { DateRangePicker, NoDataInDateRangeCard, normalizeToYYYYMMDD } from '@/components/dashboard/DateRangePicker';
+
 export default function ExecutiveSummaryPage() {
   const [loading, setLoading] = useState(true);
   const [salesData, setSalesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
@@ -55,6 +57,9 @@ export default function ExecutiveSummaryPage() {
   const [receivablesData, setReceivablesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
   const [payablesData, setPayablesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
   const [paymentsData, setPaymentsData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
+  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
+  const [dateFilterActive, setDateFilterActive] = useState<boolean>(false);
 
   const loadAllModuleSummaries = async () => {
     setLoading(true);
@@ -92,33 +97,50 @@ export default function ExecutiveSummaryPage() {
     loadAllModuleSummaries();
   }, []);
 
+  const filterByDate = (txns: FinancialTransaction[]) => {
+    if (!dateFilterActive || (!selectedStartDate && !selectedEndDate)) return txns;
+    return txns.filter(t => {
+      const d = normalizeToYYYYMMDD(t.date);
+      if (!d) return true;
+      if (selectedStartDate && d < selectedStartDate) return false;
+      if (selectedEndDate && d > selectedEndDate) return false;
+      return true;
+    });
+  };
+
+  const activeSalesTxns = filterByDate(salesData.txns);
+  const activePurchasesTxns = filterByDate(purchasesData.txns);
+  const activeReceivablesTxns = filterByDate(receivablesData.txns);
+  const activePayablesTxns = filterByDate(payablesData.txns);
+  const activePaymentsTxns = filterByDate(paymentsData.txns);
+
   // --- 1. CONSOLIDATED SALES SUMMARY ---
-  const totalSales = salesData.txns.reduce((s, t) => s + (t.grossTotal || t.saleAmount || t.totalAmount || t.amount || 0), 0);
-  const salesCount = salesData.txns.length;
+  const totalSales = activeSalesTxns.reduce((s, t) => s + (t.grossTotal || t.saleAmount || t.totalAmount || t.amount || 0), 0);
+  const salesCount = activeSalesTxns.length;
   const avgSalesInvoice = salesCount > 0 ? totalSales / salesCount : 0;
 
   // --- 2. CONSOLIDATED PURCHASES SUMMARY ---
-  const totalPurchases = purchasesData.txns.reduce((s, t) => s + (t.grossTotal || t.totalAmount || t.value || t.amount || 0), 0);
-  const totalIGST = purchasesData.txns.reduce((s, t) => s + (t.igst || 0), 0);
-  const totalCGST = purchasesData.txns.reduce((s, t) => s + (t.cgst || 0), 0);
-  const totalSGST = purchasesData.txns.reduce((s, t) => s + (t.sgst || 0), 0);
+  const totalPurchases = activePurchasesTxns.reduce((s, t) => s + (t.grossTotal || t.totalAmount || t.value || t.amount || 0), 0);
+  const totalIGST = activePurchasesTxns.reduce((s, t) => s + (t.igst || 0), 0);
+  const totalCGST = activePurchasesTxns.reduce((s, t) => s + (t.cgst || 0), 0);
+  const totalSGST = activePurchasesTxns.reduce((s, t) => s + (t.sgst || 0), 0);
   const totalGSTClaimable = totalIGST + totalCGST + totalSGST;
-  const totalFreight = purchasesData.txns.reduce((s, t) => s + (t.transportationCharges || 0), 0);
+  const totalFreight = activePurchasesTxns.reduce((s, t) => s + (t.transportationCharges || 0), 0);
 
   // --- 3. CONSOLIDATED RECEIVABLES (DEBTORS) SUMMARY ---
   const recSnap = receivablesData.snap;
-  const totalReceivables = recSnap?.grandTotalClosing ?? receivablesData.txns.reduce((s, t) => s + (t.closingBalance || 0), 0);
-  const recDebit = recSnap?.grandTotalDebit ?? receivablesData.txns.reduce((s, t) => s + (t.debit || 0), 0);
-  const recCredit = recSnap?.grandTotalCredit ?? receivablesData.txns.reduce((s, t) => s + (t.credit || 0), 0);
+  const totalReceivables = recSnap?.grandTotalClosing ?? activeReceivablesTxns.reduce((s, t) => s + (t.closingBalance || 0), 0);
+  const recDebit = recSnap?.grandTotalDebit ?? activeReceivablesTxns.reduce((s, t) => s + (t.debit || 0), 0);
+  const recCredit = recSnap?.grandTotalCredit ?? activeReceivablesTxns.reduce((s, t) => s + (t.credit || 0), 0);
   const recBase = (recSnap?.grandTotalOpening || 0) + recDebit;
   const ceiPct = recBase > 0 ? Math.round((recCredit / recBase) * 100) : 0;
   const dsoDays = recDebit > 0 ? Math.round((Math.max(0, totalReceivables) / recDebit) * 30) : 0;
 
   // --- 4. CONSOLIDATED PAYABLES (CREDITORS) SUMMARY ---
   const paySnap = payablesData.snap;
-  const totalPayables = paySnap?.grandTotalClosing ?? payablesData.txns.reduce((s, t) => s + (t.closingBalance || 0), 0);
-  const payDebit = paySnap?.grandTotalDebit ?? payablesData.txns.reduce((s, t) => s + (t.debit || 0), 0);
-  const payCredit = paySnap?.grandTotalCredit ?? payablesData.txns.reduce((s, t) => s + (t.credit || 0), 0);
+  const totalPayables = paySnap?.grandTotalClosing ?? activePayablesTxns.reduce((s, t) => s + (t.closingBalance || 0), 0);
+  const payDebit = paySnap?.grandTotalDebit ?? activePayablesTxns.reduce((s, t) => s + (t.debit || 0), 0);
+  const payCredit = paySnap?.grandTotalCredit ?? activePayablesTxns.reduce((s, t) => s + (t.credit || 0), 0);
   const payBase = (paySnap?.grandTotalOpening || 0) + payCredit;
   const psePct = payBase > 0 ? Math.round((payDebit / payBase) * 100) : 0;
   const dpoDays = payCredit > 0 ? Math.round((Math.max(0, totalPayables) / payCredit) * 30) : 0;
@@ -128,7 +150,7 @@ export default function ExecutiveSummaryPage() {
   const grossMarginPct = totalSales > 0 ? Math.round(((totalSales - totalPurchases) / totalSales) * 100) : 0;
 
   // --- 6. MONTHLY CONSOLIDATED TRENDS ---
-  const allTxns = [...salesData.txns, ...purchasesData.txns];
+  const allTxns = [...activeSalesTxns, ...activePurchasesTxns];
   const monthlyTrends = calculateMonthlyTrends(allTxns);
 
   // --- 7. MODULE DISTRIBUTION DONUT CHART ---
@@ -146,17 +168,21 @@ export default function ExecutiveSummaryPage() {
     return `₹${Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const fmtBalance = (val: number, type: 'dr' | 'cr') => {
+  const fmtBalance = (val: number, type: 'dr' | 'cr' = 'dr') => {
     if (val === 0) return `₹0.00 ${type.toUpperCase()}`;
     const str = Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return val < 0 ? `₹${str} ${type === 'dr' ? 'Cr' : 'Dr'}` : `₹${str} ${type.toUpperCase()}`;
   };
 
-  const hasAnyData = salesData.txns.length > 0 || purchasesData.txns.length > 0 || receivablesData.txns.length > 0 || payablesData.txns.length > 0;
+  const rawMasterTxns = [...salesData.txns, ...purchasesData.txns, ...receivablesData.txns, ...payablesData.txns, ...paymentsData.txns];
+  const activeMasterTxns = [...activeSalesTxns, ...activePurchasesTxns, ...activeReceivablesTxns, ...activePayablesTxns, ...activePaymentsTxns];
+
+  const hasAnyData = rawMasterTxns.length > 0;
+  const isDateFilteredEmpty = dateFilterActive && activeMasterTxns.length === 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Title Header (Clean Executive Title without Upload Buttons) */}
+      {/* Page Title Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-stone-900 dark:text-white tracking-tight flex items-center gap-2">
@@ -174,10 +200,31 @@ export default function ExecutiveSummaryPage() {
         </div>
       </div>
 
+      <DateRangePicker
+        transactions={rawMasterTxns}
+        selectedStartDate={selectedStartDate}
+        selectedEndDate={selectedEndDate}
+        onDateRangeChange={(_, start, end) => {
+          setSelectedStartDate(start);
+          setSelectedEndDate(end);
+          setDateFilterActive(Boolean(start || end));
+        }}
+      />
+
       {!loading && !hasAnyData ? (
         <EmptyState
           title="No Module Data Available for Summary"
           description="Financial snapshots have not been uploaded yet. Upload data in Sales, Purchases, Receivables, or Payables module pages to view consolidated master executive analytics."
+        />
+      ) : isDateFilteredEmpty ? (
+        <NoDataInDateRangeCard
+          startDate={selectedStartDate}
+          endDate={selectedEndDate}
+          onReset={() => {
+            setSelectedStartDate(null);
+            setSelectedEndDate(null);
+            setDateFilterActive(false);
+          }}
         />
       ) : (
         <>

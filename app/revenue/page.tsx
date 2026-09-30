@@ -8,11 +8,15 @@ import { KpiCard } from '@/components/dashboard/KpiCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
+import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
 import { DollarSign, TrendingUp, Award, Percent, UploadCloud } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 export default function RevenuePage() {
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
+  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -26,8 +30,9 @@ export default function RevenuePage() {
     fetchTransactions();
   }, []);
 
-  const kpis = calculateKPIs(transactions);
-  const monthlyTrends = calculateMonthlyTrends(transactions);
+  const activeTxns = dateFilteredTxns ?? transactions;
+  const kpis = calculateKPIs(activeTxns);
+  const monthlyTrends = calculateMonthlyTrends(activeTxns);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -51,11 +56,32 @@ export default function RevenuePage() {
         </button>
       </div>
 
+      <DateRangePicker
+        transactions={transactions}
+        selectedStartDate={selectedStartDate}
+        selectedEndDate={selectedEndDate}
+        onDateRangeChange={(filtered, start, end) => {
+          setDateFilteredTxns(filtered);
+          setSelectedStartDate(start);
+          setSelectedEndDate(end);
+        }}
+      />
+
       {!loading && transactions.length === 0 ? (
         <EmptyState
           title="No Revenue Data Available"
           description="Upload Tally sales exports to view revenue growth trends, year-over-year performance, and business unit contribution."
           onQuickUpload={() => setIsUploadOpen(true)}
+        />
+      ) : dateFilteredTxns !== null && dateFilteredTxns.length === 0 ? (
+        <NoDataInDateRangeCard
+          startDate={selectedStartDate}
+          endDate={selectedEndDate}
+          onReset={() => {
+            setDateFilteredTxns(null);
+            setSelectedStartDate(null);
+            setSelectedEndDate(null);
+          }}
         />
       ) : (
         <>

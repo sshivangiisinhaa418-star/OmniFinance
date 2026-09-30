@@ -9,6 +9,7 @@ import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { FinancialStatementView } from '@/components/statements/FinancialStatementView';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
+import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
 import { PieChart, DollarSign, TrendingUp, Receipt, Percent, UploadCloud } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -23,6 +24,9 @@ import {
 
 export default function ProfitLossPage() {
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
+  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -36,7 +40,8 @@ export default function ProfitLossPage() {
     fetchTransactions();
   }, []);
 
-  const kpis = calculateKPIs(transactions);
+  const activeTxns = dateFilteredTxns ?? transactions;
+  const kpis = calculateKPIs(activeTxns);
 
   const waterfallData = [
     { stage: '1. Revenue', amount: kpis.totalSales, fill: '#10b981' },
@@ -68,11 +73,32 @@ export default function ProfitLossPage() {
         </button>
       </div>
 
+      <DateRangePicker
+        transactions={transactions}
+        selectedStartDate={selectedStartDate}
+        selectedEndDate={selectedEndDate}
+        onDateRangeChange={(filtered, start, end) => {
+          setDateFilteredTxns(filtered);
+          setSelectedStartDate(start);
+          setSelectedEndDate(end);
+        }}
+      />
+
       {!loading && transactions.length === 0 ? (
         <EmptyState
           title="No Profit & Loss Data Available"
           description="Upload sales, purchase, and expense vouchers from Tally to generate a complete P&L analysis."
           onQuickUpload={() => setIsUploadOpen(true)}
+        />
+      ) : dateFilteredTxns !== null && dateFilteredTxns.length === 0 ? (
+        <NoDataInDateRangeCard
+          startDate={selectedStartDate}
+          endDate={selectedEndDate}
+          onReset={() => {
+            setDateFilteredTxns(null);
+            setSelectedStartDate(null);
+            setSelectedEndDate(null);
+          }}
         />
       ) : (
         <>

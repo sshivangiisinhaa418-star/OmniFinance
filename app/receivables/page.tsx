@@ -8,7 +8,7 @@ import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import { SnapshotSelector } from '@/components/dashboard/SnapshotSelector';
-import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
+import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
 import {
   Clock,
   AlertTriangle,
@@ -62,6 +62,8 @@ export default function ReceivablesPage() {
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
+  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -293,10 +295,28 @@ export default function ReceivablesPage() {
       {/* Date Range Calendar Filter with 15-Day Presets & Out-of-Range Alerts */}
       <DateRangePicker
         transactions={transactions}
-        onDateRangeChange={(filtered) => setDateFilteredTxns(filtered)}
+        selectedStartDate={selectedStartDate}
+        selectedEndDate={selectedEndDate}
+        onDateRangeChange={(filtered, start, end) => {
+          setDateFilteredTxns(filtered);
+          setSelectedStartDate(start);
+          setSelectedEndDate(end);
+        }}
       />
 
-      {/* SECTION 1: EXECUTIVE OWNER MATHEMATICAL KPIS */}
+      {dateFilteredTxns !== null && dateFilteredTxns.length === 0 ? (
+        <NoDataInDateRangeCard
+          startDate={selectedStartDate}
+          endDate={selectedEndDate}
+          onReset={() => {
+            setDateFilteredTxns(null);
+            setSelectedStartDate(null);
+            setSelectedEndDate(null);
+          }}
+        />
+      ) : (
+        <>
+          {/* SECTION 1: EXECUTIVE OWNER MATHEMATICAL KPIS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard
           title="Total Net Receivables"
@@ -645,6 +665,8 @@ export default function ReceivablesPage() {
           </div>
         )}
       </div>
+    </>
+    )}
 
       <QuickUploadModal
         isOpen={isUploadOpen}

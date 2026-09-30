@@ -7,10 +7,14 @@ import { calculateKPIs } from '@/lib/finance/calculations';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
+import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
 import { Wallet, ArrowUpRight, ArrowDownRight, CheckCircle2, UploadCloud } from 'lucide-react';
 
 export default function BankCashPage() {
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
+  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -24,7 +28,8 @@ export default function BankCashPage() {
     fetchTransactions();
   }, []);
 
-  const kpis = calculateKPIs(transactions);
+  const activeTxns = dateFilteredTxns ?? transactions;
+  const kpis = calculateKPIs(activeTxns);
   const netCash = kpis.cashInflow - kpis.cashOutflow;
 
   return (
@@ -49,11 +54,32 @@ export default function BankCashPage() {
         </button>
       </div>
 
+      <DateRangePicker
+        transactions={transactions}
+        selectedStartDate={selectedStartDate}
+        selectedEndDate={selectedEndDate}
+        onDateRangeChange={(filtered, start, end) => {
+          setDateFilteredTxns(filtered);
+          setSelectedStartDate(start);
+          setSelectedEndDate(end);
+        }}
+      />
+
       {!loading && transactions.length === 0 ? (
         <EmptyState
           title="No Bank & Cash Data"
           description="Upload receipt, payment, and bank vouchers from Tally to track treasury accounts."
           onQuickUpload={() => setIsUploadOpen(true)}
+        />
+      ) : dateFilteredTxns !== null && dateFilteredTxns.length === 0 ? (
+        <NoDataInDateRangeCard
+          startDate={selectedStartDate}
+          endDate={selectedEndDate}
+          onReset={() => {
+            setDateFilteredTxns(null);
+            setSelectedStartDate(null);
+            setSelectedEndDate(null);
+          }}
         />
       ) : (
         <>

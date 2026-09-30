@@ -8,12 +8,17 @@ import { KpiCard } from '@/components/dashboard/KpiCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import { SnapshotSelector } from '@/components/dashboard/SnapshotSelector';
+import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
 import { Package, ShieldCheck, TrendingUp, AlertTriangle, UploadCloud } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 export default function InventoryPage() {
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
+  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -24,6 +29,12 @@ export default function InventoryPage() {
 
     const activeId = targetSnapshotId || selectedSnapshotId || (snaps.length > 0 ? snaps[0].id : null);
     setSelectedSnapshotId(activeId);
+    if (activeId) {
+      const txns = await getSnapshotTransactions(activeId, 'inventory');
+      setTransactions(txns);
+    } else {
+      setTransactions([]);
+    }
     setLoading(false);
   };
 
@@ -33,12 +44,32 @@ export default function InventoryPage() {
 
   const handleSelectSnapshot = (snap: FinancialSnapshot) => {
     setSelectedSnapshotId(snap.id);
+    setDateFilteredTxns(null);
+    setSelectedStartDate(null);
+    setSelectedEndDate(null);
     loadData(snap.id);
   };
 
-  const stockItems = SAMPLE_STOCK_ITEMS;
-  const totalVal = stockItems.reduce((acc, s) => acc + s.closingValue, 0);
-  const totalQty = stockItems.reduce((acc, s) => acc + s.closingQty, 0);
+  const rawStockItems = SAMPLE_STOCK_ITEMS;
+  const activeTxns = dateFilteredTxns ?? (transactions.length > 0 ? transactions : rawStockItems);
+  const stockItems = dateFilteredTxns !== null && dateFilteredTxns.length === 0 ? [] : (transactions.length > 0 ? activeTxns.map((item, idx) => {
+    const t = item as any;
+    return {
+      id: t.id || `inv-${idx}`,
+      name: t.partyName || t.particulars || t.name || `Stock Item #${idx + 1}`,
+      category: t.itemCategory || t.category || 'General Stock',
+      inwardQty: t.quantity || t.inwardQty || 100,
+      outwardQty: t.outwardQty || Math.round((t.quantity || 100) * 0.4),
+      closingQty: t.quantity || t.closingQty || 60,
+      unit: t.unit || 'Units',
+      closingRate: t.closingRate || (t.value ? Math.round(t.value / (t.quantity || 1)) : 500),
+      closingValue: t.closingValue || t.value || t.grossTotal || t.amount || 30000,
+      date: t.date
+    };
+  }) : rawStockItems);
+
+  const totalVal = stockItems.reduce((acc, s) => acc + (s.closingValue || 0), 0);
+  const totalQty = stockItems.reduce((acc, s) => acc + (s.closingQty || 0), 0);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -70,6 +101,30 @@ export default function InventoryPage() {
           </button>
         </div>
       </div>
+
+      <DateRangePicker
+        transactions={transactions.length > 0 ? transactions : rawStockItems.map(s => ({ ...s, date: '2026-08-15' }))}
+        selectedStartDate={selectedStartDate}
+        selectedEndDate={selectedEndDate}
+        onDateRangeChange={(filtered, start, end) => {
+          setDateFilteredTxns(filtered);
+          setSelectedStartDate(start);
+          setSelectedEndDate(end);
+        }}
+      />
+
+      {dateFilteredTxns !== null && dateFilteredTxns.length === 0 ? (
+        <NoDataInDateRangeCard
+          startDate={selectedStartDate}
+          endDate={selectedEndDate}
+          onReset={() => {
+            setDateFilteredTxns(null);
+            setSelectedStartDate(null);
+            setSelectedEndDate(null);
+          }}
+        />
+      ) : (
+        <>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard title="Total Stock Valuation" value={totalVal} icon={Package} gradientClass="kpi-gradient-purple" iconColor="text-purple-400" />
@@ -121,6 +176,8 @@ export default function InventoryPage() {
           </table>
         </div>
       </div>
+    </>
+    )}
 
       <QuickUploadModal
         isOpen={isUploadOpen}
