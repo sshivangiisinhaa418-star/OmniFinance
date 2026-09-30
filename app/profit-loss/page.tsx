@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getStoredTransactions } from '@/lib/storage';
+import { getActiveTransactionsForModule } from '@/lib/storage';
 import { FinancialTransaction } from '@/types';
 import { calculateKPIs } from '@/lib/finance/calculations';
 import { KpiCard } from '@/components/dashboard/KpiCard';
@@ -31,8 +31,13 @@ export default function ProfitLossPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
   const fetchTransactions = async () => {
-    const txns = await getStoredTransactions();
-    setTransactions(txns);
+    const [sales, purchases, payments, receipts] = await Promise.all([
+      getActiveTransactionsForModule('sales'),
+      getActiveTransactionsForModule('purchases'),
+      getActiveTransactionsForModule('payments'),
+      getActiveTransactionsForModule('receipts'),
+    ]);
+    setTransactions([...sales, ...purchases, ...payments, ...receipts]);
     setLoading(false);
   };
 

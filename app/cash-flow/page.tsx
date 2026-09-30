@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getStoredTransactions } from '@/lib/storage';
+import { getActiveTransactionsForModule } from '@/lib/storage';
 import { FinancialTransaction } from '@/types';
 import { calculateKPIs } from '@/lib/finance/calculations';
 import { KpiCard } from '@/components/dashboard/KpiCard';
@@ -30,8 +30,13 @@ export default function CashFlowPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
   const fetchTransactions = async () => {
-    const txns = await getStoredTransactions();
-    setTransactions(txns);
+    const [payments, receipts, sales, purchases] = await Promise.all([
+      getActiveTransactionsForModule('payments'),
+      getActiveTransactionsForModule('receipts'),
+      getActiveTransactionsForModule('sales'),
+      getActiveTransactionsForModule('purchases'),
+    ]);
+    setTransactions([...receipts, ...payments, ...sales, ...purchases]);
     setLoading(false);
   };
 

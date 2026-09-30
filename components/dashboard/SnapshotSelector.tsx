@@ -2,13 +2,13 @@
 
 import React, { useState } from 'react';
 import { FinancialSnapshot } from '@/types';
-import { Calendar, ChevronDown, Clock, History, Check, FileSpreadsheet } from 'lucide-react';
+import { Calendar, ChevronDown, Clock, History, Check, FileSpreadsheet, Layers, Sparkles } from 'lucide-react';
 
 interface SnapshotSelectorProps {
   moduleTitle: string;
   snapshots: FinancialSnapshot[];
   selectedSnapshotId: string | null;
-  onSelectSnapshot: (snapshot: FinancialSnapshot) => void;
+  onSelectSnapshot: (snapshot: FinancialSnapshot | 'all') => void;
 }
 
 export const SnapshotSelector: React.FC<SnapshotSelectorProps> = ({
@@ -28,8 +28,11 @@ export const SnapshotSelector: React.FC<SnapshotSelectorProps> = ({
     );
   }
 
-  const selectedSnapshot = snapshots.find(s => s.id === selectedSnapshotId) || snapshots[0];
-  const isLatest = snapshots.length > 0 && selectedSnapshot.id === snapshots[0].id;
+  const activeSnapshots = snapshots.filter(s => s.status === 'active');
+  const isCombined = !selectedSnapshotId || selectedSnapshotId === 'all';
+  const selectedSnapshot = isCombined ? null : snapshots.find(s => s.id === selectedSnapshotId);
+
+  const totalCombinedRows = (activeSnapshots.length > 0 ? activeSnapshots : snapshots).reduce((acc, s) => acc + (s.recordCount || 0), 0);
 
   const formatDate = (isoStr: string) => {
     try {
@@ -52,13 +55,27 @@ export const SnapshotSelector: React.FC<SnapshotSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-200 text-xs font-extrabold shadow-sm hover:border-orange-500/40 hover:bg-stone-50 dark:hover:bg-stone-800/80 transition cursor-pointer"
       >
-        <Calendar className="w-4 h-4 text-orange-600 dark:text-amber-400" />
+        {isCombined ? (
+          <Layers className="w-4 h-4 text-orange-600 dark:text-amber-400" />
+        ) : (
+          <Calendar className="w-4 h-4 text-orange-600 dark:text-amber-400" />
+        )}
         <div className="flex items-center gap-1.5">
-          <span className="text-stone-500 font-medium">Snapshot:</span>
-          <span>{formatDate(selectedSnapshot.uploadedAt)}</span>
-          {isLatest && (
+          <span className="text-stone-500 font-medium">Dataset:</span>
+          <span>
+            {isCombined
+              ? `All Active (${activeSnapshots.length || snapshots.length} Files)`
+              : selectedSnapshot
+              ? formatDate(selectedSnapshot.uploadedAt)
+              : 'Selected'}
+          </span>
+          {isCombined ? (
+            <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+              Combined
+            </span>
+          ) : (
             <span className="ml-1 px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] font-bold">
-              Latest
+              Single File
             </span>
           )}
         </div>
@@ -73,17 +90,51 @@ export const SnapshotSelector: React.FC<SnapshotSelectorProps> = ({
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-orange-500" />
                 <span className="text-xs font-bold text-stone-900 dark:text-white">
-                  {moduleTitle} History
+                  {moduleTitle} Datasets
                 </span>
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-200 dark:bg-stone-800 text-stone-600 dark:text-stone-400">
-                {snapshots.length} Snapshots
+                {snapshots.length} Files
               </span>
             </div>
 
-            <div className="max-h-64 overflow-y-auto divide-y divide-stone-100 dark:divide-stone-800/50">
+            <div className="max-h-72 overflow-y-auto divide-y divide-stone-100 dark:divide-stone-800/50">
+              {/* Option 1: All Active Datasets Combined */}
+              <button
+                onClick={() => {
+                  onSelectSnapshot('all');
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left p-3 transition flex items-start justify-between group cursor-pointer ${
+                  isCombined
+                    ? 'bg-emerald-500/10 dark:bg-emerald-500/20'
+                    : 'hover:bg-stone-50 dark:hover:bg-stone-800/40'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span className="text-xs font-bold text-stone-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">
+                      All Active Datasets (Combined)
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-extrabold uppercase">
+                      Default
+                    </span>
+                  </div>
+
+                  <div className="text-[10px] text-stone-400 font-mono">
+                    Combines {activeSnapshots.length || snapshots.length} active files • {totalCombinedRows} total rows
+                  </div>
+                </div>
+
+                {isCombined && (
+                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                )}
+              </button>
+
+              {/* Individual File Options */}
               {snapshots.map((snap, idx) => {
-                const isSelected = snap.id === selectedSnapshot.id;
+                const isSelected = !isCombined && snap.id === selectedSnapshotId;
                 const isItemLatest = idx === 0;
 
                 return (

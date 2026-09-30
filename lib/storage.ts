@@ -83,10 +83,12 @@ export const getLatestSnapshotForModule = async (module: DatasetType): Promise<F
   return activeSnapshots.length > 0 ? activeSnapshots[0] : null;
 };
 
-export const getSnapshotTransactions = async (
-  snapshotId: string,
+// Retrieve transactions for a list of snapshot IDs in a single query
+export const getTransactionsForSnapshotIds = async (
+  snapshotIds: string[],
   module: DatasetType = 'payables'
 ): Promise<FinancialTransaction[]> => {
+  if (!snapshotIds || snapshotIds.length === 0) return [];
   const tableName = getTableNameForModule(module);
 
   if (!isSupabaseConfigured() || !supabase) {
@@ -98,10 +100,10 @@ export const getSnapshotTransactions = async (
     const { data, error } = await supabase
       .from(tableName)
       .select('*')
-      .eq('snapshot_id', snapshotId);
+      .in('snapshot_id', snapshotIds);
 
     if (error) {
-      console.error(`Supabase error fetching transactions from ${tableName} for snapshot ${snapshotId}:`, error);
+      console.error(`Supabase error fetching transactions from ${tableName} for snapshotIds:`, error);
       return [];
     }
 
@@ -171,6 +173,29 @@ export const getSnapshotTransactions = async (
     console.error(`Failed to fetch transactions from Supabase table ${tableName}`, err);
     return [];
   }
+};
+
+export const getSnapshotTransactions = async (
+  snapshotId: string,
+  module: DatasetType = 'payables'
+): Promise<FinancialTransaction[]> => {
+  return getTransactionsForSnapshotIds([snapshotId], module);
+};
+
+// Retrieve transactions for ALL active snapshots of a module (or specific snapshotId if passed)
+export const getActiveTransactionsForModule = async (
+  module: DatasetType,
+  specificSnapshotId?: string | null
+): Promise<FinancialTransaction[]> => {
+  if (specificSnapshotId && specificSnapshotId !== 'all') {
+    return getSnapshotTransactions(specificSnapshotId, module);
+  }
+
+  const snapshots = await getSnapshotsForModule(module);
+  const activeSnapshotIds = snapshots.filter(s => s.status === 'active').map(s => s.id);
+  if (activeSnapshotIds.length === 0) return [];
+
+  return getTransactionsForSnapshotIds(activeSnapshotIds, module);
 };
 
 export const saveSnapshotWithTransactions = async (
@@ -427,10 +452,7 @@ export const clearAllData = async (): Promise<void> => {
 // Backward compatibility helpers
 export const getStoredTransactions = async (datasetFilter?: string): Promise<FinancialTransaction[]> => {
   if (datasetFilter) {
-    const latest = await getLatestSnapshotForModule(datasetFilter as DatasetType);
-    if (latest) {
-      return getSnapshotTransactions(latest.id, datasetFilter as DatasetType);
-    }
+    return getActiveTransactionsForModule(datasetFilter as DatasetType);
   }
   return [];
 };

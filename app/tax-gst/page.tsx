@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getSnapshotsForModule, getSnapshotTransactions } from '@/lib/storage';
+import { getSnapshotsForModule, getSnapshotTransactions, getActiveTransactionsForModule } from '@/lib/storage';
 import { FinancialTransaction, FinancialSnapshot } from '@/types';
 import { calculateKPIs } from '@/lib/finance/calculations';
 import { KpiCard } from '@/components/dashboard/KpiCard';
@@ -23,25 +23,21 @@ import {
 
 export default function TaxGstPage() {
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>('all');
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
-  const loadData = async (targetSnapshotId?: string) => {
+  const loadData = async (targetSnapshotId?: string | 'all') => {
     setLoading(true);
     const snaps = await getSnapshotsForModule('tax');
     setSnapshots(snaps);
 
-    const activeId = targetSnapshotId || selectedSnapshotId || (snaps.length > 0 ? snaps[0].id : null);
+    const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
-    if (activeId) {
-      const txns = await getSnapshotTransactions(activeId, 'tax');
-      setTransactions(txns);
-    } else {
-      setTransactions([]);
-    }
+    const txns = await getActiveTransactionsForModule('tax', activeId);
+    setTransactions(txns);
     setLoading(false);
   };
 
@@ -49,9 +45,10 @@ export default function TaxGstPage() {
     loadData();
   }, []);
 
-  const handleSelectSnapshot = (snap: FinancialSnapshot) => {
-    setSelectedSnapshotId(snap.id);
-    loadData(snap.id);
+  const handleSelectSnapshot = (snap: FinancialSnapshot | 'all') => {
+    const targetId = typeof snap === 'string' ? snap : snap.id;
+    setSelectedSnapshotId(targetId);
+    loadData(targetId);
   };
 
   const kpis = calculateKPIs(transactions);

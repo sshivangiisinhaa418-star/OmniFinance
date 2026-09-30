@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getSnapshotsForModule, getSnapshotTransactions } from '@/lib/storage';
+import { getSnapshotsForModule, getSnapshotTransactions, getActiveTransactionsForModule } from '@/lib/storage';
 import { FinancialTransaction, FinancialSnapshot } from '@/types';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
@@ -59,7 +59,7 @@ type SortField = 'name' | 'riskRating' | 'openingBalance' | 'debit' | 'credit' |
 
 export default function ReceivablesPage() {
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>('all');
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
   const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
@@ -82,20 +82,16 @@ export default function ReceivablesPage() {
     }
   };
 
-  const loadData = async (targetSnapshotId?: string) => {
+  const loadData = async (targetSnapshotId?: string | 'all') => {
     setLoading(true);
     const snaps = await getSnapshotsForModule('receivables');
     setSnapshots(snaps);
 
-    const activeId = targetSnapshotId || selectedSnapshotId || (snaps.length > 0 ? snaps[0].id : null);
+    const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
-    if (activeId) {
-      const txns = await getSnapshotTransactions(activeId, 'receivables');
-      setTransactions(txns);
-    } else {
-      setTransactions([]);
-    }
+    const txns = await getActiveTransactionsForModule('receivables', activeId);
+    setTransactions(txns);
     setLoading(false);
   };
 
@@ -103,10 +99,11 @@ export default function ReceivablesPage() {
     loadData();
   }, []);
 
-  const handleSelectSnapshot = (snap: FinancialSnapshot) => {
-    setSelectedSnapshotId(snap.id);
+  const handleSelectSnapshot = (snap: FinancialSnapshot | 'all') => {
+    const targetId = typeof snap === 'string' ? snap : snap.id;
+    setSelectedSnapshotId(targetId);
     setDateFilteredTxns(null);
-    loadData(snap.id);
+    loadData(targetId);
     setCurrentPage(1);
   };
 

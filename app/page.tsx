@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   getLatestSnapshotForModule,
-  getSnapshotTransactions,
+  getActiveTransactionsForModule,
 } from '@/lib/storage';
 import { FinancialTransaction, FinancialSnapshot } from '@/types';
 import { calculateMonthlyTrends, parseMonthAndYear } from '@/lib/finance/calculations';
@@ -74,11 +74,11 @@ export default function ExecutiveSummaryPage() {
       ]);
 
       const [salesTxns, purchasesTxns, receivablesTxns, payablesTxns, paymentsTxns] = await Promise.all([
-        salesSnap ? getSnapshotTransactions(salesSnap.id, 'sales') : Promise.resolve([]),
-        purchasesSnap ? getSnapshotTransactions(purchasesSnap.id, 'purchases') : Promise.resolve([]),
-        receivablesSnap ? getSnapshotTransactions(receivablesSnap.id, 'receivables') : Promise.resolve([]),
-        payablesSnap ? getSnapshotTransactions(payablesSnap.id, 'payables') : Promise.resolve([]),
-        paymentsSnap ? getSnapshotTransactions(paymentsSnap.id, 'payments') : Promise.resolve([]),
+        getActiveTransactionsForModule('sales'),
+        getActiveTransactionsForModule('purchases'),
+        getActiveTransactionsForModule('receivables'),
+        getActiveTransactionsForModule('payables'),
+        getActiveTransactionsForModule('payments'),
       ]);
 
       setSalesData({ snap: salesSnap, txns: salesTxns });
