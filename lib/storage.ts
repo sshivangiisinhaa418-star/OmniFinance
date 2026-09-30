@@ -39,20 +39,40 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
   }
 
   try {
-    const { data, error } = await supabase
-      .from('snapshots')
-      .select('*')
-      .eq('module', module)
-      .order('uploaded_at', { ascending: false });
+    const allSnaps: any[] = [];
+    const BATCH_SIZE = 1000;
+    let offset = 0;
+    let hasMore = true;
 
-    if (error) {
-      console.error(`Supabase error fetching snapshots for module ${module}:`, error);
-      return [];
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('snapshots')
+        .select('*')
+        .eq('module', module)
+        .order('uploaded_at', { ascending: false })
+        .range(offset, offset + BATCH_SIZE - 1);
+
+      if (error) {
+        console.error(`Supabase error fetching snapshots for module ${module}:`, error);
+        break;
+      }
+
+      if (!data || data.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      allSnaps.push(...data);
+      if (data.length < BATCH_SIZE) {
+        hasMore = false;
+      } else {
+        offset += BATCH_SIZE;
+      }
     }
 
-    if (!data) return [];
+    if (allSnaps.length === 0) return [];
 
-    return data.map(d => ({
+    return allSnaps.map(d => ({
       id: d.id,
       module: d.module as DatasetType,
       fileName: d.file_name,
@@ -97,19 +117,39 @@ export const getTransactionsForSnapshotIds = async (
   }
 
   try {
-    const { data, error } = await supabase
-      .from(tableName)
-      .select('*')
-      .in('snapshot_id', snapshotIds);
+    const allData: any[] = [];
+    const BATCH_SIZE = 1000;
+    let offset = 0;
+    let hasMore = true;
 
-    if (error) {
-      console.error(`Supabase error fetching transactions from ${tableName} for snapshotIds:`, error);
-      return [];
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .in('snapshot_id', snapshotIds)
+        .range(offset, offset + BATCH_SIZE - 1);
+
+      if (error) {
+        console.error(`Supabase error fetching transactions from ${tableName} for snapshotIds:`, error);
+        break;
+      }
+
+      if (!data || data.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      allData.push(...data);
+      if (data.length < BATCH_SIZE) {
+        hasMore = false;
+      } else {
+        offset += BATCH_SIZE;
+      }
     }
 
-    if (!data) return [];
+    if (allData.length === 0) return [];
 
-    const validData = data.filter(d => {
+    const validData = allData.filter(d => {
       const p = String(d.party_name || d.particulars || '').toLowerCase().trim();
       return !p.includes('grand total') && p !== 'total' && !p.startsWith('total ') && p !== 'total vouchers';
     });
@@ -120,13 +160,24 @@ export const getTransactionsForSnapshotIds = async (
       const sgst = Number(d.sgst) || Number(d.input_sgst_silvassa) || Number(d.input_sgst_kol) || 0;
       const taxSum = igst + cgst + sgst;
 
+      const roundOff = Number(d.round_off) || 0;
       const rawGross = Number(d.gross_total) || Number(d.total_amount) || Number(d.amount) || 0;
-      const rawSale = Number(d.sale_amount) || Number(d.purchases_ac) || Number(d.value) || 0;
-      const rawValue = Number(d.value) || rawSale || (rawGross > taxSum ? rawGross - taxSum : rawGross);
+      const rawSale = d.sale_amount !== null && d.sale_amount !== undefined && !isNaN(Number(d.sale_amount))
+        ? Number(d.sale_amount)
+        : (d.purchases_ac !== null && d.purchases_ac !== undefined && !isNaN(Number(d.purchases_ac)) ? Number(d.purchases_ac) : undefined);
+      const rawValue = d.value !== null && d.value !== undefined && !isNaN(Number(d.value)) ? Number(d.value) : undefined;
 
-      const grossTotal = rawGross || (rawValue ? rawValue + taxSum : 0);
-      const saleAmount = rawSale || rawValue || grossTotal;
-      const value = rawValue || saleAmount || grossTotal;
+      // Mathematical precision resolution with round-off reconciliation
+      const value = rawValue !== undefined ? rawValue : (rawSale !== undefined ? rawSale : (rawGross > taxSum ? rawGross - taxSum - roundOff : rawGross));
+      const grossTotal = rawGross || (value ? value + taxSum + roundOff : 0);
+      const saleAmount = rawSale !== undefined ? rawSale : (value || grossTotal);
+
+      const rawData = d.raw_data || {};
+      const unit = d.unit || rawData.unit || (module === 'sales' ? 'MT' : undefined);
+      const unitName = d.unit_name || rawData.unitName || (unit === 'MT' ? 'Metric Ton' : undefined);
+      const formattedQuantity = rawData.formattedQuantity || (unit ? `${(Number(d.quantity) || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unit}` : undefined);
+      const rate = Number(d.rate) || Number(rawData.rate) || 0;
+      const itemName = d.item_name || rawData.itemName;
 
       return {
         id: d.id,
@@ -143,10 +194,13 @@ export const getTransactionsForSnapshotIds = async (
         panNo: d.pan_no || '',
         ledgerName: d.ledger_name || (module === 'sales' ? 'Sales Account' : 'General Ledger'),
         ledgerCategory: module,
-        itemName: d.item_name,
+        itemName,
         itemCategory: d.item_category,
         quantity: Number(d.quantity) || 0,
-        rate: Number(d.rate) || 0,
+        unit: unit || undefined,
+        unitName: unitName || undefined,
+        formattedQuantity,
+        rate,
         value,
         grossTotal,
         saleAmount,
@@ -238,8 +292,8 @@ export const saveSnapshotWithTransactions = async (
   if (snapshot.module === 'sales') {
     rows = newTxns.map(t => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
-      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
-      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum + (t.roundOff || 0) : 0);
+      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross);
       const val = t.value || sale || gross;
       return {
         id: t.id,
@@ -263,6 +317,13 @@ export const saveSnapshotWithTransactions = async (
         sgst: t.sgst || 0,
         work_contract: t.workContract || 0,
         transportation_charges: t.transportationCharges || 0,
+        raw_data: {
+          unit: t.unit,
+          unitName: t.unitName,
+          formattedQuantity: t.formattedQuantity,
+          rate: t.rate,
+          itemName: t.itemName,
+        },
       };
     });
   } else if (snapshot.module === 'receivables') {
@@ -273,7 +334,8 @@ export const saveSnapshotWithTransactions = async (
       transaction_date: t.date || new Date().toISOString().substring(0, 10),
       voucher_number: t.voucherNo || `VCH-${t.id}`,
       voucher_type: t.voucherType || 'Receipt',
-      party_name: t.partyName,
+      particulars: t.partyName || 'Customer',
+      party_name: t.partyName || 'Customer',
       party_type: t.partyType || 'customer',
       ledger_name: t.ledgerName || 'Receivables Account',
       ledger_category: 'receivables',
@@ -282,20 +344,28 @@ export const saveSnapshotWithTransactions = async (
       debit: t.debit || 0,
       credit: t.credit || 0,
       amount: t.amount || 0,
-      due_date: t.dueDate,
+      due_date: t.dueDate || null,
       overdue_days: t.overdueDays || 0,
       payment_status: t.paymentStatus || 'unpaid',
-      description: t.description,
+      description: t.description || '',
+      raw_data: {
+        unit: t.unit,
+        unitName: t.unitName,
+        formattedQuantity: t.formattedQuantity,
+        rate: t.rate,
+        itemName: t.itemName,
+      },
     }));
   } else if (snapshot.module === 'payables') {
     rows = newTxns.map(t => ({
       id: t.id,
       snapshot_id: snapshot.id,
       source_import_id: t.sourceImportId,
-      transaction_date: t.date,
-      voucher_number: t.voucherNo,
+      transaction_date: t.date || new Date().toISOString().substring(0, 10),
+      voucher_number: t.voucherNo || `VCH-${t.id}`,
       voucher_type: t.voucherType || 'Payment',
-      party_name: t.partyName,
+      particulars: t.partyName || 'Vendor',
+      party_name: t.partyName || 'Vendor',
       party_type: t.partyType || 'vendor',
       ledger_name: t.ledgerName || 'Payables Account',
       ledger_category: 'payables',
@@ -305,7 +375,14 @@ export const saveSnapshotWithTransactions = async (
       credit: t.credit || 0,
       amount: t.amount || 0,
       payment_status: t.paymentStatus || 'unpaid',
-      description: t.description,
+      description: t.description || '',
+      raw_data: {
+        unit: t.unit,
+        unitName: t.unitName,
+        formattedQuantity: t.formattedQuantity,
+        rate: t.rate,
+        itemName: t.itemName,
+      },
     }));
   } else if (snapshot.module === 'payments') {
     rows = newTxns.map(t => ({
@@ -338,8 +415,8 @@ export const saveSnapshotWithTransactions = async (
   } else if (snapshot.module === 'purchases') {
     rows = newTxns.map(t => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
-      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
-      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum + (t.roundOff || 0) : 0);
+      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross);
       const val = t.value || sale || gross;
       return {
         id: t.id,
@@ -351,8 +428,8 @@ export const saveSnapshotWithTransactions = async (
         voucher_number: t.voucherNo || `VCH-${t.id}`,
         voucher_type: t.voucherType || 'Purchase',
         ledger_name: t.ledgerName || 'Purchase Account',
-        item_name: t.itemName,
-        item_category: t.itemCategory,
+        item_name: t.itemName || '',
+        item_category: t.itemCategory || '',
         gstin: t.gstin || '',
         pan_no: t.panNo || '',
         quantity: t.quantity || 0,
@@ -368,7 +445,14 @@ export const saveSnapshotWithTransactions = async (
         input_cgst_silvassa: t.cgst || 0,
         input_sgst_silvassa: t.sgst || 0,
         transportation_expenses: t.transportationCharges || 0,
-        description: t.description,
+        description: t.description || '',
+        raw_data: {
+          unit: t.unit,
+          unitName: t.unitName,
+          formattedQuantity: t.formattedQuantity,
+          rate: t.rate,
+          itemName: t.itemName,
+        },
       };
     });
   } else {
@@ -376,12 +460,13 @@ export const saveSnapshotWithTransactions = async (
       id: t.id,
       snapshot_id: snapshot.id,
       source_import_id: t.sourceImportId,
-      transaction_date: t.date,
-      voucher_number: t.voucherNo,
-      voucher_type: t.voucherType,
-      party_name: t.partyName,
-      party_type: t.partyType,
-      ledger_name: t.ledgerName,
+      transaction_date: t.date || new Date().toISOString().substring(0, 10),
+      particulars: t.partyName || 'Entity',
+      voucher_number: t.voucherNo || `VCH-${t.id}`,
+      voucher_type: t.voucherType || 'Journal',
+      party_name: t.partyName || 'Entity',
+      party_type: t.partyType || 'other',
+      ledger_name: t.ledgerName || 'General Account',
       ledger_category: snapshot.module,
       opening_balance: t.openingBalance || 0,
       closing_balance: t.closingBalance || 0,
@@ -389,17 +474,37 @@ export const saveSnapshotWithTransactions = async (
       credit: t.credit || 0,
       amount: t.amount || 0,
       payment_status: t.paymentStatus || 'unpaid',
-      description: t.description,
+      description: t.description || '',
+      raw_data: {
+        unit: t.unit,
+        unitName: t.unitName,
+        formattedQuantity: t.formattedQuantity,
+        rate: t.rate,
+        itemName: t.itemName,
+      },
     }));
   }
 
-  // 3. Insert transaction records directly into Supabase table in fast batches of 100
-  const CHUNK_SIZE = 100;
+  // 3. Insert transaction records directly into Supabase table in fast batches of 250
+  const CHUNK_SIZE = 250;
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const { error: insertErr } = await supabase.from(tableName).insert(chunk);
+    let { error: insertErr } = await supabase.from(tableName).insert(chunk);
+
+    // Resilient fallback: if the target table doesn't have the 'raw_data' column in Supabase, strip it and retry
+    if (insertErr && (insertErr.message?.includes('raw_data') || insertErr.details?.includes('raw_data') || insertErr.hint?.includes('raw_data'))) {
+      console.warn(`Table "${tableName}" schema has no "raw_data" column. Retrying insert cleanly without raw_data...`);
+      const cleanChunk = chunk.map(({ raw_data, ...rest }: any) => rest);
+      const retryRes = await supabase.from(tableName).insert(cleanChunk);
+      insertErr = retryRes.error;
+    }
+
     if (insertErr) {
       console.error(`Failed to insert batch [${i}..${i + CHUNK_SIZE}] into Supabase table ${tableName}:`, insertErr);
+      // Clean up orphaned snapshot header if transaction insert failed
+      try {
+        await supabase.from('snapshots').delete().eq('id', snapshot.id);
+      } catch {}
       throw insertErr;
     }
   }

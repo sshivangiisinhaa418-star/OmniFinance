@@ -23,29 +23,36 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(bytes);
 
     const tempDir = os.tmpdir();
-    const uniqueName = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.xlsx`;
-    tempFilePath = path.join(tempDir, uniqueName);
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const ext = path.extname(file.name || '').toLowerCase() || '.xlsx';
+    tempFilePath = path.join(tempDir, `upload_${uniqueId}${ext}`);
+    const tempOutputPath = path.join(tempDir, `parsed_${uniqueId}.json`);
 
     await fs.writeFile(tempFilePath, buffer);
 
-    // 2. Execute Python Parser Script
+    // 2. Execute Python Parser Script with output file destination
     const scriptPath = path.join(process.cwd(), 'scripts', 'parse_tally_excel.py');
     
-    const { stdout, stderr } = await execFileAsync('python', [scriptPath, tempFilePath], {
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    const { stdout, stderr } = await execFileAsync('python', [scriptPath, tempFilePath, tempOutputPath], {
+      maxBuffer: 150 * 1024 * 1024, // 150MB buffer fallback
     });
 
     if (stderr && stderr.includes('Error')) {
       console.warn('Python script warning/error stderr:', stderr);
     }
 
-    // 3. Parse JSON output returned by Python script
-    const resultJson = JSON.parse(stdout);
-
-    // 4. Clean up temp file
-    if (tempFilePath) {
-      await fs.unlink(tempFilePath).catch(() => {});
+    // 3. Parse JSON output returned by Python script (prefer file read to avoid stdout buffer limits)
+    let resultJson: any;
+    try {
+      const fileData = await fs.readFile(tempOutputPath, 'utf-8');
+      resultJson = JSON.parse(fileData);
+    } catch {
+      resultJson = JSON.parse(stdout);
     }
+
+    // 4. Clean up temp files
+    await fs.unlink(tempFilePath).catch(() => {});
+    await fs.unlink(tempOutputPath).catch(() => {});
 
     return NextResponse.json({
       success: true,

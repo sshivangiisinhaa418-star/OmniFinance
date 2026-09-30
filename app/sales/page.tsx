@@ -98,9 +98,9 @@ export default function SalesPage() {
   const grandTotals = filteredTxns.reduce(
     (acc, t) => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
-      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum : 0);
-      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum : gross);
-      const val = t.value || sale || gross;
+      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum + (t.roundOff || 0) : 0);
+      const sale = t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : (t.value || (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross));
+      const val = t.value !== undefined && t.value !== null ? t.value : (sale || gross);
 
       acc.quantity += t.quantity || 0;
       acc.value += val;
@@ -486,17 +486,29 @@ export default function SalesPage() {
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 font-mono text-[11px]">
                       {t.panNo || '-'}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-700 dark:text-stone-300">
-                      {(t.quantity || 0).toLocaleString('en-IN')}
+                    <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono">
+                      <div className="font-semibold text-stone-800 dark:text-stone-200 flex items-center justify-end gap-1.5">
+                        <span>{(t.quantity || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })}</span>
+                        {t.unit && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20" title={t.unitName || t.unit}>
+                            {t.unit}
+                          </span>
+                        )}
+                      </div>
+                      {t.unitName && (
+                        <div className="text-[10px] text-stone-400 dark:text-stone-500 font-sans font-normal">
+                          {t.unitName}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-800 dark:text-stone-200 font-medium">
-                      {fmtCurrency(t.value || t.saleAmount || t.grossTotal)}
+                      {fmtCurrency(t.value !== undefined && t.value !== null ? t.value : (t.saleAmount || t.grossTotal))}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
-                      {fmtCurrency(t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + (t.igst||0) + (t.cgst||0) + (t.sgst||0) : 0))}
+                      {fmtCurrency(t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + (t.igst||0) + (t.cgst||0) + (t.sgst||0) + (t.roundOff||0) : 0))}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {fmtCurrency(t.saleAmount || t.value || t.grossTotal)}
+                      {fmtCurrency(t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : (t.value || t.grossTotal))}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmtCurrency(t.igst)}

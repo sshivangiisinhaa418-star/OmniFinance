@@ -127,7 +127,7 @@ export default function PaymentsPage() {
   const totalCreditAmount = activeTxns.reduce((s, t) => s + (t.credit || 0), 0);
   
   const debitAmounts = activeTxns.map(t => t.debit || t.amount || 0).filter(a => a > 0);
-  const maxPayment = debitAmounts.length > 0 ? Math.max(...debitAmounts) : 0;
+  const maxPayment = debitAmounts.length > 0 ? debitAmounts.reduce((max, a) => (a > max ? a : max), 0) : 0;
   const avgPayment = debitAmounts.length > 0 ? totalDebitDisbursed / debitAmounts.length : 0;
 
   // Payee distribution aggregation for Donut Chart

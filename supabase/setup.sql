@@ -217,9 +217,11 @@ CREATE TABLE IF NOT EXISTS public.payments_transactions (
     debit NUMERIC DEFAULT 0,
     credit NUMERIC DEFAULT 0,
     amount NUMERIC DEFAULT 0,
+    raw_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE public.payments_transactions ADD COLUMN IF NOT EXISTS raw_data JSONB;
 ALTER TABLE public.payments_transactions ENABLE ROW LEVEL SECURITY;
 
 -- 7. RECEIPTS REGISTER TRANSACTIONS TABLE
@@ -235,10 +237,81 @@ CREATE TABLE IF NOT EXISTS public.receipts_transactions (
     debit NUMERIC DEFAULT 0,
     credit NUMERIC DEFAULT 0,
     amount NUMERIC DEFAULT 0,
+    raw_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE public.receipts_transactions ADD COLUMN IF NOT EXISTS raw_data JSONB;
 ALTER TABLE public.receipts_transactions ENABLE ROW LEVEL SECURITY;
+
+-- 8. INVENTORY STOCK SUMMARY TABLE
+CREATE TABLE IF NOT EXISTS public.inventory_stock (
+    id TEXT PRIMARY KEY,
+    snapshot_id TEXT REFERENCES public.snapshots(id) ON DELETE CASCADE,
+    source_import_id TEXT,
+    transaction_date TEXT NOT NULL,
+    particulars TEXT NOT NULL,
+    party_name TEXT NOT NULL,
+    item_name TEXT,
+    item_category TEXT,
+    quantity NUMERIC DEFAULT 0,
+    rate NUMERIC DEFAULT 0,
+    amount NUMERIC DEFAULT 0,
+    unit TEXT,
+    raw_data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 9. TAX GST TRANSACTIONS TABLE
+CREATE TABLE IF NOT EXISTS public.tax_gst_transactions (
+    id TEXT PRIMARY KEY,
+    snapshot_id TEXT REFERENCES public.snapshots(id) ON DELETE CASCADE,
+    source_import_id TEXT,
+    transaction_date TEXT NOT NULL,
+    particulars TEXT NOT NULL,
+    party_name TEXT NOT NULL,
+    voucher_type TEXT DEFAULT 'Tax Invoice',
+    voucher_number TEXT NOT NULL,
+    gstin TEXT,
+    pan_no TEXT,
+    value NUMERIC DEFAULT 0,
+    gross_total NUMERIC DEFAULT 0,
+    igst NUMERIC DEFAULT 0,
+    cgst NUMERIC DEFAULT 0,
+    sgst NUMERIC DEFAULT 0,
+    raw_data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 10. EXPENSES REGISTER TRANSACTIONS TABLE
+CREATE TABLE IF NOT EXISTS public.expenses_transactions (
+    id TEXT PRIMARY KEY,
+    snapshot_id TEXT REFERENCES public.snapshots(id) ON DELETE CASCADE,
+    source_import_id TEXT,
+    transaction_date TEXT NOT NULL,
+    particulars TEXT NOT NULL,
+    party_name TEXT NOT NULL,
+    voucher_type TEXT DEFAULT 'Payment',
+    voucher_number TEXT NOT NULL,
+    ledger_name TEXT DEFAULT 'Expense Account',
+    amount NUMERIC DEFAULT 0,
+    debit NUMERIC DEFAULT 0,
+    credit NUMERIC DEFAULT 0,
+    raw_data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.inventory_stock ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tax_gst_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.expenses_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow all inventory" ON public.inventory_stock;
+DROP POLICY IF EXISTS "Allow all tax" ON public.tax_gst_transactions;
+DROP POLICY IF EXISTS "Allow all expenses" ON public.expenses_transactions;
+
+CREATE POLICY "Allow all inventory" ON public.inventory_stock FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all tax" ON public.tax_gst_transactions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all expenses" ON public.expenses_transactions FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all snapshots" ON public.snapshots;
 DROP POLICY IF EXISTS "Allow all sales" ON public.sales_transactions;

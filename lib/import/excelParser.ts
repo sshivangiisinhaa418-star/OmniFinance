@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { SheetMapping, DatasetType, FinancialTransaction } from '@/types';
 import { classifyDatasetType, autoMapColumn } from './columnMapper';
-import { parseAmount, parseBalanceAmount, parseDate, validateFinancialRecord } from './validator';
+import { parseAmount, parseBalanceAmount, parseDate, parseQuantityWithUnit, validateFinancialRecord } from './validator';
 
 export interface ParsedWorkbookResult {
   fileName: string;
@@ -22,7 +22,7 @@ export const findHeaderRowIndex = (rows2D: any[][]): number => {
   let bestIndex = 0;
   let maxScore = -1;
 
-  for (let i = 0; i < Math.min(rows2D.length, 15); i++) {
+  for (let i = 0; i < Math.min(rows2D.length, 35); i++) {
     const row = rows2D[i];
     if (!Array.isArray(row)) continue;
 
@@ -64,12 +64,12 @@ const findAndMergeHeaders = (rows2D: any[][]): { headers: string[]; dataStartInd
   let openingRow = -1;
   let debitCreditRow = -1;
 
-  for (let i = 0; i < Math.min(rows2D.length, 20); i++) {
+  for (let i = 0; i < Math.min(rows2D.length, 35); i++) {
     const row = rows2D[i];
     if (!Array.isArray(row)) continue;
     const rowStr = row.map(c => String(c ?? '').toLowerCase().trim()).join(' ');
 
-    if (particularsRow === -1 && rowStr.includes('particulars')) {
+    if (particularsRow === -1 && (rowStr.includes('particulars') || rowStr.includes('party') || rowStr.includes('customer') || rowStr.includes('vendor'))) {
       particularsRow = i;
     }
     if (openingRow === -1 && rowStr.includes('opening')) {
@@ -81,7 +81,7 @@ const findAndMergeHeaders = (rows2D: any[][]): { headers: string[]; dataStartInd
   }
 
   // If we found the multi-level structure, merge all header rows
-  if (particularsRow >= 0 && debitCreditRow >= 0 && debitCreditRow > particularsRow) {
+  if (particularsRow >= 0 && debitCreditRow >= 0 && debitCreditRow >= particularsRow) {
     const headerStart = Math.min(particularsRow, openingRow >= 0 ? openingRow : particularsRow);
     const headerEnd = debitCreditRow;
 
@@ -113,7 +113,7 @@ const findAndMergeHeaders = (rows2D: any[][]): { headers: string[]; dataStartInd
     return { headers: deduplicateHeaders(merged), dataStartIndex: headerEnd + 1 };
   }
 
-  // Fallback: use 2-row header detection
+  // Fallback: use single or 2-row header detection
   const headerIndex = findHeaderRowIndex(rows2D);
   const row1 = rows2D[headerIndex] || [];
   const row2 = rows2D[headerIndex + 1] || [];
@@ -158,19 +158,16 @@ const findAndMergeHeaders = (rows2D: any[][]): { headers: string[]; dataStartInd
 
 /**
  * Normalize a combined header to a canonical field name.
- * Handles cases like "Opening Balance Debit" → "Debit" (Debit takes priority)
  */
 const normalizeHeaderName = (raw: string): string => {
   const lower = raw.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 
   if (lower === 'particulars' || lower === 'column 1' || lower === 'column1') return 'Particulars';
 
-  // Debit/Credit must be checked BEFORE Opening/Closing to handle
-  // cases like "Opening Balance Debit" (produced by bad lastParent inheritance)
+  // Debit/Credit must be checked BEFORE Opening/Closing
   if (lower.includes('debit') && !lower.includes('opening') && !lower.includes('closing')) return 'Debit';
   if (lower.includes('credit') && !lower.includes('opening') && !lower.includes('closing')) return 'Credit';
 
-  // Also catch "Opening Balance Debit" → this should be "Debit"
   if (lower.includes('debit')) return 'Debit';
   if (lower.includes('credit')) return 'Credit';
 
@@ -180,6 +177,10 @@ const normalizeHeaderName = (raw: string): string => {
   if (lower.includes('closing') && lower.includes('balance')) return 'Closing Balance';
   if (lower === 'closing') return 'Closing Balance';
   if (lower === 'balance') return 'Opening Balance';
+
+  // Quantity variants
+  if (lower.includes('billed') && lower.includes('qty')) return 'Billed Qty';
+  if (lower.includes('actual') && lower.includes('qty')) return 'Actual Qty';
 
   // Transactions alone
   if (lower === 'transactions') return 'Transactions';
@@ -191,7 +192,6 @@ const deduplicateHeaders = (headers: string[]): string[] => {
   const seen: Record<string, number> = {};
   return headers.map(h => {
     if (h in seen) {
-      // If "Opening Balance" appears twice, second is likely "Closing Balance"
       if (h === 'Opening Balance' && !('Closing Balance' in seen)) {
         seen['Closing Balance'] = 1;
         return 'Closing Balance';
@@ -288,7 +288,7 @@ export const parseExcelFile = async (file: File): Promise<ParsedWorkbookResult> 
 
     if (!rows2D || rows2D.length === 0) continue;
 
-    // Use the new multi-level header merger
+    // Use multi-level header merger
     const { headers: combinedHeaders, dataStartIndex } = findAndMergeHeaders(rows2D);
     const rawRows2D = rows2D.slice(dataStartIndex);
 
@@ -369,6 +369,10 @@ export const parseExcelFile = async (file: File): Promise<ParsedWorkbookResult> 
   };
 };
 
+/**
+ * Transforms raw extracted sheet rows into validated FinancialTransaction models.
+ * Implements Voucher Forward-Filling for multi-item rows, and deep UOM/Unit extraction.
+ */
 export const transformSheetToTransactions = (
   file: File | { name: string },
   sheetName: string,
@@ -378,11 +382,24 @@ export const transformSheetToTransactions = (
   importId: string
 ): FinancialTransaction[] => {
   const headerToFieldMap = new Map<string, string>();
+  let quantityHeader = '';
+  let unitHeader = '';
+
   mappings.forEach(m => {
     if (m.targetField && m.targetField !== 'unmapped') {
       headerToFieldMap.set(m.excelHeader, m.targetField);
+      if (m.targetField === 'quantity' && !quantityHeader) quantityHeader = m.excelHeader;
+      if (m.targetField === 'unit' && !unitHeader) unitHeader = m.excelHeader;
     }
   });
+
+  // State trackers for Forward-Filling multi-line vouchers / missing dates across 2025 to 2027
+  let lastValidDate = '';
+  let lastValidVoucherNo = '';
+  let lastValidVoucherType = '';
+  let lastValidPartyName = '';
+  let lastValidGstin = '';
+  let lastValidPan = '';
 
   return rawRows.map((row, idx) => {
     const extracted: Record<string, any> = {};
@@ -394,25 +411,9 @@ export const transformSheetToTransactions = (
       }
     });
 
-    const partyType =
-      datasetType === 'sales' || datasetType === 'receivables'
-        ? 'customer'
-        : datasetType === 'purchases' || datasetType === 'payables'
-        ? 'vendor'
-        : 'other';
-
-    const voucherType = extracted.voucherType || (
-      datasetType === 'sales' ? 'Sales' :
-      datasetType === 'purchases' ? 'Purchase' :
-      datasetType === 'expenses' ? 'Payment' :
-      datasetType === 'receivables' ? 'Receipt' :
-      datasetType === 'payables' ? 'Payment' : 'Journal'
-    );
-
     const isPayable = datasetType === 'payables' || datasetType === 'purchases';
     const isReceivable = datasetType === 'receivables' || datasetType === 'sales';
 
-    // Direct raw row key fallbacks for Tally Sales & Purchase export formats
     const normStr = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
     const getRowVal = (...keys: string[]) => {
       for (const k of keys) {
@@ -428,14 +429,110 @@ export const transformSheetToTransactions = (
       return undefined;
     };
 
-    const voucherNoRaw = getRowVal('voucherNo', 'Vch No.', 'Vch No', 'Voucher No.', 'Voucher No', 'Voucher Number', 'Invoice No', 'Bill No.');
-    const voucherRefNoRaw = getRowVal('voucherRefNo', 'Voucher Ref. No.', 'Voucher Ref No', 'Vch Ref No', 'Ref No', 'Supplier Invoice No.');
-    const gstinRaw = getRowVal('gstin', 'GSTIN/UIN', 'GSTIN', 'UIN', 'Party GSTIN');
-    const panNoRaw = getRowVal('panNo', 'PAN No.', 'PAN No', 'PAN', 'PAN Number');
+    // 1. Voucher Number resolution with Forward-Fill
+    const voucherNoRaw = getRowVal('voucherNo', 'Vch No.', 'Vch No', 'Voucher No.', 'Voucher No', 'Voucher Number', 'Invoice No', 'Bill No.', 'Document No');
+    let resolvedVoucherNo = voucherNoRaw ? String(voucherNoRaw).trim() : '';
+    if (resolvedVoucherNo) {
+      lastValidVoucherNo = resolvedVoucherNo;
+    } else if (lastValidVoucherNo) {
+      resolvedVoucherNo = lastValidVoucherNo;
+    } else {
+      resolvedVoucherNo = `VCH-${idx + 1001}`;
+    }
 
-    const rawQty = getRowVal('quantity', 'Quantity', 'Qty', 'Units', 'PCS', 'Nos', 'Bags', 'Kgs', 'Mtrs');
-    const rawVal = getRowVal('value', 'Value', 'Taxable Value', 'Assessable Value', 'Taxable Amt', 'Taxable Amount', 'Amount (Taxable)');
-    const rawGross = getRowVal('grossTotal', 'Gross Total', 'Total Amount', 'Invoice Value', 'Bill Amount', 'Net Amount', 'Total Value', 'Total', 'Voucher Amount', 'Billed Amount');
+    // 2. Voucher Type resolution
+    const voucherTypeRaw = extracted.voucherType || getRowVal('voucherType', 'Vch Type', 'Type');
+    let resolvedVoucherType = voucherTypeRaw ? String(voucherTypeRaw).trim() : '';
+    if (resolvedVoucherType) {
+      lastValidVoucherType = resolvedVoucherType;
+    } else if (lastValidVoucherType) {
+      resolvedVoucherType = lastValidVoucherType;
+    } else {
+      resolvedVoucherType = (
+        datasetType === 'sales' ? 'Sales' :
+        datasetType === 'purchases' ? 'Purchase' :
+        datasetType === 'expenses' ? 'Payment' :
+        datasetType === 'receivables' ? 'Receipt' :
+        datasetType === 'payables' ? 'Payment' : 'Journal'
+      );
+    }
+
+    // 3. Party Name resolution with Forward-Fill
+    let partyNameStr = String(
+      extracted.partyName ||
+        extracted.particulars ||
+        row['Particulars'] ||
+        row['particulars'] ||
+        row['Party Name'] ||
+        row['Name'] ||
+        row.Column_1 ||
+        row.column_1 ||
+        row.Column_0 ||
+        ''
+    ).trim();
+
+    const partyLower = partyNameStr.toLowerCase();
+    if (
+      partyLower === 'grand total' ||
+      partyLower.includes('grand total') ||
+      partyLower === 'total' ||
+      partyLower.startsWith('total ') ||
+      partyLower === 'total vouchers' ||
+      partyLower.includes('total summary')
+    ) {
+      return null as any;
+    }
+
+    if (partyNameStr) {
+      lastValidPartyName = partyNameStr;
+    } else if (lastValidPartyName) {
+      partyNameStr = lastValidPartyName;
+    } else {
+      partyNameStr = datasetType === 'purchases' || datasetType === 'payables' ? 'Vendor' : 'Cash Customer';
+    }
+
+    // 4. Date resolution with Forward-Fill (Essential for 2025 to 2027 multi-item voucher exports)
+    const primaryDateRaw = row['Date'] || row['date'] || row['Voucher Date'] || row['Voucher date'] || row['Txn Date'] || getRowVal('date');
+    let resolvedDate = parseDate(primaryDateRaw);
+    if (resolvedDate) {
+      lastValidDate = resolvedDate;
+    } else if (lastValidDate) {
+      resolvedDate = lastValidDate;
+    } else {
+      resolvedDate = new Date().toISOString().substring(0, 10);
+    }
+
+    // 5. Party Type
+    const partyType =
+      datasetType === 'sales' || datasetType === 'receivables'
+        ? 'customer'
+        : datasetType === 'purchases' || datasetType === 'payables'
+        ? 'vendor'
+        : 'other';
+
+    // 6. GSTIN & PAN
+    const gstinRaw = getRowVal('gstin', 'GSTIN/UIN', 'GSTIN', 'UIN', 'Party GSTIN');
+    if (gstinRaw) lastValidGstin = String(gstinRaw);
+    const resolvedGstin = gstinRaw ? String(gstinRaw) : lastValidGstin;
+
+    const panNoRaw = getRowVal('panNo', 'PAN No.', 'PAN No', 'PAN', 'PAN Number');
+    if (panNoRaw) lastValidPan = String(panNoRaw);
+    const resolvedPan = panNoRaw ? String(panNoRaw) : lastValidPan;
+
+    const voucherRefNoRaw = getRowVal('voucherRefNo', 'Voucher Ref. No.', 'Voucher Ref No', 'Vch Ref No', 'Ref No', 'Supplier Invoice No.');
+
+    // 7. Quantity & Unit of Measurement (UOM) Deep Extraction (MT, NOS, KG, PCS, etc.)
+    // 7. Quantity & Unit of Measurement (UOM) Deep Extraction (MT, NOS, KG, PCS, etc.)
+    const rawQty = getRowVal('quantity', 'Quantity', 'Qty', 'Billed Qty', 'Actual Qty', 'Units', 'PCS', 'Nos', 'Bags', 'Kgs', 'Mtrs', 'MT');
+    const rawUnit = getRowVal('unit', 'Unit', 'UOM', 'Base Unit', 'Units');
+    const parsedQty = parseQuantityWithUnit(rawQty, quantityHeader, rawUnit);
+
+    const rateRaw = getRowVal('rate', 'Rate', 'Price', 'Unit Rate', 'Rate (INR)', 'Item Rate', 'Rate/Unit');
+    const parsedRate = parseAmount(rateRaw);
+
+    // 8. Financial Values & Taxes
+    const rawVal = getRowVal('value', 'Value', 'Taxable Value', 'Assessable Value', 'Taxable Amt', 'Taxable Amount', 'Amount (Taxable)', 'Basic Value', 'Basic Amount', 'Basic Amt', 'Net Value', 'Net Val', 'Net Amount', 'Net Amt', 'Item Value', 'Goods Value');
+    const rawGross = getRowVal('grossTotal', 'Gross Total', 'Total Amount', 'Invoice Value', 'Bill Amount', 'Total Value', 'Total', 'Voucher Amount', 'Billed Amount', 'Grand Total', 'Total Invoice Amount');
     const rawSale = getRowVal('saleAmount', 'Sale', 'Sales', 'Sales A/c', 'Sales Ac', 'Purchases A/c', 'Purchases Ac', 'Purchase', 'Purchase Amount', 'Purchases', 'Purchase A/c', 'Purchase Ac', 'Purchases Account', 'Sales Account');
     const rawIgst = getRowVal('igst', 'IGST', 'Integrated Tax', 'Input IGST Silvassa', 'Input IGST KOL', 'Input IGST', 'Output IGST', 'IGST Amount');
     const rawCgst = getRowVal('cgst', 'CGST', 'Central Tax', 'Input CGST Silvassa', 'Input CGST KOL', 'Input CGST', 'Output CGST', 'CGST Amount');
@@ -454,83 +551,100 @@ export const transformSheetToTransactions = (
     const igstVal = parseAmount(rawIgst);
     const cgstVal = parseAmount(rawCgst);
     const sgstVal = parseAmount(rawSgst);
+    const roundOffVal = parseAmount(rawRound);
     const taxAmount = parseAmount(getRowVal('taxAmount', 'Tax Amount', 'Tax')) || (igstVal + cgstVal + sgstVal);
 
+    // Multi-ledger aggregation for Tally sheets with split tax accounts (e.g. Intrastate + Interstate, multiple Purchase heads)
+    let multiLedgerSum = 0;
+    let hasMultiLedgers = false;
+    for (const [rk, rv] of Object.entries(row)) {
+      const normRk = normStr(rk);
+      if (
+        (normRk.includes('sale') || normRk.includes('sales') || normRk.includes('purchase') || normRk.includes('purchases')) &&
+        !normRk.includes('vouchertype') &&
+        !normRk.includes('vchno') &&
+        !normRk.includes('date') &&
+        !normRk.includes('party') &&
+        !normRk.includes('particulars') &&
+        !normRk.includes('cgst') &&
+        !normRk.includes('sgst') &&
+        !normRk.includes('igst')
+      ) {
+        const num = parseAmount(rv);
+        if (num > 0) {
+          multiLedgerSum += num;
+          hasMultiLedgers = true;
+        }
+      }
+    }
+
+    const hasExplicitVal = rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '';
+    const hasExplicitGross = rawGross !== undefined && rawGross !== null && String(rawGross).trim() !== '';
+    const hasExplicitSale = (rawSale !== undefined && rawSale !== null && String(rawSale).trim() !== '') || (hasMultiLedgers && multiLedgerSum > 0);
+
     let parsedGross = parseAmount(rawGross);
-    let parsedSale = parseAmount(rawSale);
+    let parsedSale = hasMultiLedgers && multiLedgerSum > 0 ? multiLedgerSum : parseAmount(rawSale);
     let parsedVal = parseAmount(rawVal);
     let parsedAmt = parseAmount(getRowVal('amount', 'Amount'));
     let parsedTotal = parseAmount(getRowVal('totalAmount', 'Total Amount'));
 
-    // Smart financial cross-fallbacks
-    if (!parsedSale && parsedVal) parsedSale = parsedVal;
-    if (!parsedSale && parsedAmt) parsedSale = parsedAmt;
-    if (!parsedSale && parsedGross) parsedSale = parsedGross > taxAmount ? parsedGross - taxAmount : parsedGross;
-    if (!parsedSale && parsedTotal) parsedSale = parsedTotal > taxAmount ? parsedTotal - taxAmount : parsedTotal;
-    if (!parsedSale && (debit || credit)) parsedSale = isPayable ? (debit || credit) : (credit || debit);
+    // Precision Rate * Quantity resolution if Value is not explicitly printed in row
+    if (!hasExplicitVal && !parsedVal && parsedRate > 0 && parsedQty.quantity > 0) {
+      parsedVal = Math.round(parsedRate * Math.abs(parsedQty.quantity) * 100) / 100;
+    }
 
-    if (!parsedVal && parsedSale) parsedVal = parsedSale;
-    if (!parsedVal && parsedGross) parsedVal = parsedGross > taxAmount ? parsedGross - taxAmount : parsedGross;
-    if (!parsedVal && parsedAmt) parsedVal = parsedAmt;
-    if (!parsedVal && (debit || credit)) parsedVal = isPayable ? (debit || credit) : (credit || debit);
+    // Smart financial cross-fallbacks ONLY when fields are not explicitly present in the data
+    if (!hasExplicitSale) {
+      if (parsedVal) parsedSale = parsedVal;
+      else if (parsedAmt) parsedSale = parsedAmt;
+      else if (parsedGross) parsedSale = parsedGross > taxAmount ? parsedGross - taxAmount - roundOffVal : parsedGross;
+      else if (parsedTotal) parsedSale = parsedTotal > taxAmount ? parsedTotal - taxAmount - roundOffVal : parsedTotal;
+      else if (debit || credit) parsedSale = isPayable ? (debit || credit) : (credit || debit);
+    }
 
-    if (!parsedGross && parsedSale) parsedGross = parsedSale + taxAmount;
-    if (!parsedGross && parsedVal) parsedGross = parsedVal + taxAmount;
-    if (!parsedGross && parsedAmt) parsedGross = parsedAmt;
-    if (!parsedGross && parsedTotal) parsedGross = parsedTotal;
-    if (!parsedGross && (debit || credit)) parsedGross = isPayable ? (debit || credit) : (credit || debit);
+    if (!hasExplicitVal) {
+      if (parsedSale) parsedVal = parsedSale;
+      else if (parsedGross) parsedVal = parsedGross > taxAmount ? parsedGross - taxAmount - roundOffVal : parsedGross;
+      else if (parsedAmt) parsedVal = parsedAmt;
+      else if (debit || credit) parsedVal = isPayable ? (debit || credit) : (credit || debit);
+    }
+
+    if (!hasExplicitGross) {
+      if (parsedSale) parsedGross = parsedSale + taxAmount + roundOffVal;
+      else if (parsedVal) parsedGross = parsedVal + taxAmount + roundOffVal;
+      else if (parsedAmt) parsedGross = parsedAmt;
+      else if (parsedTotal) parsedGross = parsedTotal;
+      else if (debit || credit) parsedGross = isPayable ? (debit || credit) : (credit || debit);
+    }
 
     const grossTotal = parsedGross;
     const saleAmount = parsedSale;
-    const value = parsedVal || saleAmount || grossTotal;
+    const value = parsedVal;
     const totalAmount = parsedTotal || grossTotal || saleAmount || value || parsedAmt || Math.abs(closingBalance);
-    const amount = parsedAmt || saleAmount || grossTotal || value || totalAmount;
+    const amount = parsedAmt || grossTotal || saleAmount || value || totalAmount;
 
-    const primaryDate = row['Date'] || row['date'] || row['Voucher Date'] || row['Voucher date'] || row['Txn Date'] || getRowVal('date');
-
-    const partyNameStr = String(
-      extracted.partyName ||
-        extracted.particulars ||
-        row['Particulars'] ||
-        row['particulars'] ||
-        row['Party Name'] ||
-        row['Name'] ||
-        row.Column_1 ||
-        row.column_1 ||
-        row.Column_0 ||
-        Object.values(row).find(v => v && String(v).trim() !== '') ||
-        'Cash Customer'
-    );
-
-    const partyLower = partyNameStr.toLowerCase().trim();
-    if (
-      partyLower === 'grand total' ||
-      partyLower.includes('grand total') ||
-      partyLower === 'total' ||
-      partyLower.startsWith('total ') ||
-      partyLower === 'total vouchers' ||
-      partyLower.includes('total summary')
-    ) {
-      return null as any;
-    }
+    const itemNameRaw = getRowVal('itemName', 'Item', 'Item Name', 'Stock Item', 'Product', 'Description of Goods');
 
     return {
       id: `txn_${importId}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
       sourceImportId: importId,
-      date: parseDate(primaryDate),
-      voucherNo: String(voucherNoRaw || `VCH-${idx + 1001}`),
-      voucherType,
+      date: resolvedDate,
+      voucherNo: resolvedVoucherNo,
+      voucherType: resolvedVoucherType,
       voucherRefNo: voucherRefNoRaw ? String(voucherRefNoRaw) : undefined,
       partyName: partyNameStr,
       partyType,
-      gstin: gstinRaw ? String(gstinRaw) : undefined,
-      panNo: panNoRaw ? String(panNoRaw) : undefined,
+      gstin: resolvedGstin || undefined,
+      panNo: resolvedPan || undefined,
       ledgerName: String(extracted.ledgerName || (datasetType === 'sales' ? 'Sales Account' : datasetType === 'purchases' ? 'Purchase Account' : 'General Ledger')),
       ledgerCategory: extracted.itemCategory || datasetType,
-      itemName: extracted.itemName ? String(extracted.itemName) : undefined,
+      itemName: itemNameRaw ? String(itemNameRaw) : undefined,
       itemCategory: extracted.itemCategory ? String(extracted.itemCategory) : undefined,
-      quantity: parseAmount(rawQty),
-      rate: parseAmount(extracted.rate || row['Rate']),
+      quantity: parsedQty.quantity,
+      unit: parsedQty.unit,
+      unitName: parsedQty.unitName,
+      formattedQuantity: parsedQty.formatted,
+      rate: parsedRate,
       value,
       grossTotal,
       saleAmount,

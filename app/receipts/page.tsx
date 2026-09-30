@@ -128,7 +128,7 @@ export default function ReceiptsPage() {
   const totalDebitAmount = activeTxns.reduce((s, t) => s + (t.debit || 0), 0);
   
   const creditAmounts = activeTxns.map(t => t.credit || t.amount || 0).filter(a => a > 0);
-  const maxReceipt = creditAmounts.length > 0 ? Math.max(...creditAmounts) : 0;
+  const maxReceipt = creditAmounts.length > 0 ? creditAmounts.reduce((max, a) => (a > max ? a : max), 0) : 0;
   const avgReceipt = creditAmounts.length > 0 ? totalCreditCollected / creditAmounts.length : 0;
 
   // Payer distribution aggregation for Donut Chart

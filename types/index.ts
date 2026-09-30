@@ -64,6 +64,9 @@ export interface FinancialTransaction {
   itemName?: string;
   itemCategory?: string;
   quantity?: number;
+  unit?: string; // Standardized unit code: 'MT', 'NOS', 'KG', 'PCS', 'BOX', etc.
+  unitName?: string; // Full human unit name: 'Metric Ton', 'Numbers (Nos)', 'Kilograms (Kg)', etc.
+  formattedQuantity?: string; // Display string: '10.500 MT'
   rate?: number;
   value?: number;
   grossTotal?: number;
