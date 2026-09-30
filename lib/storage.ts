@@ -173,8 +173,8 @@ export const getTransactionsForSnapshotIds = async (
       const saleAmount = rawSale !== undefined ? rawSale : (value || grossTotal);
 
       const rawData = d.raw_data || {};
-      const unit = d.unit || rawData.unit || (module === 'sales' ? 'MT' : undefined);
-      const unitName = d.unit_name || rawData.unitName || (unit === 'MT' ? 'Metric Ton' : undefined);
+      const unit = d.unit || rawData.unit || undefined;
+      const unitName = d.unit_name || rawData.unitName || (unit === 'MT' ? 'Metric Ton' : unit === 'NOS' ? 'Numbers' : unit === 'KG' ? 'Kilograms' : undefined);
       const formattedQuantity = rawData.formattedQuantity || (unit ? `${(Number(d.quantity) || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unit}` : undefined);
       const rate = Number(d.rate) || Number(rawData.rate) || 0;
       const itemName = d.item_name || rawData.itemName;
@@ -441,6 +441,9 @@ export const saveSnapshotWithTransactions = async (
         tax_amount: t.taxAmount || taxSum,
         total_amount: gross || val,
         round_off: t.roundOff || 0,
+        igst: t.igst || 0,
+        cgst: t.cgst || 0,
+        sgst: t.sgst || 0,
         input_igst_silvassa: t.igst || 0,
         input_cgst_silvassa: t.cgst || 0,
         input_sgst_silvassa: t.sgst || 0,

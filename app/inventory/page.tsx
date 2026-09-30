@@ -56,12 +56,12 @@ export default function InventoryPage() {
       id: t.id || `inv-${idx}`,
       name: t.partyName || t.particulars || t.name || `Stock Item #${idx + 1}`,
       category: t.itemCategory || t.category || 'General Stock',
-      inwardQty: t.quantity || t.inwardQty || 100,
-      outwardQty: t.outwardQty || Math.round((t.quantity || 100) * 0.4),
-      closingQty: t.quantity || t.closingQty || 60,
+      inwardQty: t.quantity || t.inwardQty || 0,
+      outwardQty: t.outwardQty || 0,
+      closingQty: t.closingQty !== undefined ? t.closingQty : (t.quantity || 0),
       unit: t.unit || 'Units',
-      closingRate: t.closingRate || (t.value ? Math.round(t.value / (t.quantity || 1)) : 500),
-      closingValue: t.closingValue || t.value || t.grossTotal || t.amount || 30000,
+      closingRate: t.rate || t.closingRate || (t.quantity && t.value ? Math.round(t.value / t.quantity) : 0),
+      closingValue: t.closingValue || t.value || t.grossTotal || t.amount || 0,
       date: t.date
     };
   }) : rawStockItems);

@@ -163,13 +163,14 @@ export default function PurchasesPage() {
 
   const monthlyTrends = calculateMonthlyTrends(activeTxns);
 
-  // --- 3. COST CENTER CATEGORIZATION ---
+  // --- 3. COST CENTER CATEGORIZATION (100% Dynamically calculated from actual register data) ---
+  const directProcurement = Math.max(0, totalValue - totalTransportation - totalWorkContract - totalGSTClaimable);
   const costCenterData = [
-    { category: 'Direct Procurement', amount: Math.round(totalValue * 0.65), fill: '#ea580c' },
+    { category: 'Direct Procurement', amount: Math.round(directProcurement || totalValue), fill: '#ea580c' },
     { category: 'GST Input Tax Credit', amount: Math.round(totalGSTClaimable), fill: '#10b981' },
     { category: 'Logistics & Freight', amount: Math.round(totalTransportation), fill: '#3b82f6' },
     { category: 'Services & Work Contract', amount: Math.round(totalWorkContract), fill: '#a855f7' },
-  ];
+  ].filter(c => c.amount > 0);
 
   // --- 4. RARE / INFREQUENT LEDGERS (FOR ACCOUNTANT RECONCILIATION) ---
   const rareLedgers: LowFrequencyLedger[] = [];

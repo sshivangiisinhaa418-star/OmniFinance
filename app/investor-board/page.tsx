@@ -57,10 +57,10 @@ export default function InvestorBoardPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard title="Annual Revenue Run Rate" value={kpis.totalSales * 1.2} changePct={16.5} icon={DollarSign} gradientClass="kpi-gradient-emerald" iconColor="text-emerald-500" />
-            <KpiCard title="EBITDA Profit Margin" value={`${Math.round(kpis.grossMarginPct * 0.8)}%`} isCurrency={false} icon={TrendingUp} gradientClass="kpi-gradient-purple" iconColor="text-purple-500" />
-            <KpiCard title="Capital Efficiency Score" value="3.4x" isCurrency={false} icon={ShieldCheck} gradientClass="kpi-gradient-blue" iconColor="text-blue-500" />
-            <KpiCard title="Operational Runway" value="36+ Months" isCurrency={false} icon={Building} gradientClass="kpi-gradient-amber" iconColor="text-amber-500" />
+            <KpiCard title="Total Recorded Sales Revenue" value={kpis.totalSales} changePct={kpis.salesGrowthPct} icon={DollarSign} gradientClass="kpi-gradient-emerald" iconColor="text-emerald-500" />
+            <KpiCard title="Gross Profit Margin" value={`${Math.round(kpis.grossMarginPct)}%`} isCurrency={false} icon={TrendingUp} gradientClass="kpi-gradient-purple" iconColor="text-purple-500" />
+            <KpiCard title="Net Operating Profit" value={kpis.netProfit} icon={ShieldCheck} gradientClass="kpi-gradient-blue" iconColor="text-blue-500" />
+            <KpiCard title="Total Operating Inflow" value={kpis.cashInflow} icon={Building} gradientClass="kpi-gradient-amber" iconColor="text-amber-500" />
           </div>
 
           <div className="rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/80 glass-panel p-6 space-y-4 shadow-sm">
