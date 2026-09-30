@@ -385,13 +385,29 @@ export const transformSheetToTransactions = (
   let quantityHeader = '';
   let unitHeader = '';
 
+  let sheetHasValueColumn = false;
+  let sheetHasGrossColumn = false;
+  let sheetHasSaleColumn = false;
+
   mappings.forEach(m => {
     if (m.targetField && m.targetField !== 'unmapped') {
       headerToFieldMap.set(m.excelHeader, m.targetField);
       if (m.targetField === 'quantity' && !quantityHeader) quantityHeader = m.excelHeader;
       if (m.targetField === 'unit' && !unitHeader) unitHeader = m.excelHeader;
+      if (m.targetField === 'value') sheetHasValueColumn = true;
+      if (m.targetField === 'grossTotal') sheetHasGrossColumn = true;
+      if (m.targetField === 'saleAmount') sheetHasSaleColumn = true;
     }
   });
+
+  // Sheet-level fallback detection from row keys if mappings had unmapped value
+  if (!sheetHasValueColumn && rawRows.length > 0) {
+    const keys = Object.keys(rawRows[0] || {});
+    sheetHasValueColumn = keys.some(k => k.toLowerCase().replace(/[^a-z]/g, '') === 'value');
+    if (!sheetHasGrossColumn) {
+      sheetHasGrossColumn = keys.some(k => k.toLowerCase().replace(/[^a-z]/g, '').includes('grosstotal'));
+    }
+  }
 
   // State trackers for Forward-Filling multi-line vouchers / missing dates across 2025 to 2027
   let lastValidDate = '';
@@ -578,9 +594,9 @@ export const transformSheetToTransactions = (
       }
     }
 
-    const hasExplicitVal = rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '';
-    const hasExplicitGross = rawGross !== undefined && rawGross !== null && String(rawGross).trim() !== '';
-    const hasExplicitSale = (rawSale !== undefined && rawSale !== null && String(rawSale).trim() !== '') || (hasMultiLedgers && multiLedgerSum > 0);
+    const hasExplicitVal = sheetHasValueColumn;
+    const hasExplicitGross = sheetHasGrossColumn;
+    const hasExplicitSale = sheetHasSaleColumn || (hasMultiLedgers && multiLedgerSum > 0);
 
     let parsedGross = parseAmount(rawGross);
     let parsedSale = hasMultiLedgers && multiLedgerSum > 0 ? multiLedgerSum : parseAmount(rawSale);

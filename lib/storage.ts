@@ -292,9 +292,9 @@ export const saveSnapshotWithTransactions = async (
   if (snapshot.module === 'sales') {
     rows = newTxns.map(t => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
-      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum + (t.roundOff || 0) : 0);
-      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross);
-      const val = t.value || sale || gross;
+      const gross = (t.grossTotal !== undefined && t.grossTotal !== null ? t.grossTotal : null) ?? (t.totalAmount !== undefined && t.totalAmount !== null ? t.totalAmount : null) ?? t.amount ?? (t.value != null ? t.value + taxSum + (t.roundOff || 0) : 0);
+      const sale = (t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : null) ?? (t.value !== undefined && t.value !== null ? t.value : null) ?? (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross);
+      const val = (t.value !== undefined && t.value !== null) ? t.value : (sale ?? gross);
       return {
         id: t.id,
         snapshot_id: snapshot.id,
@@ -415,9 +415,9 @@ export const saveSnapshotWithTransactions = async (
   } else if (snapshot.module === 'purchases') {
     rows = newTxns.map(t => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
-      const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum + (t.roundOff || 0) : 0);
-      const sale = t.saleAmount || t.value || (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross);
-      const val = t.value || sale || gross;
+      const gross = (t.grossTotal !== undefined && t.grossTotal !== null ? t.grossTotal : null) ?? (t.totalAmount !== undefined && t.totalAmount !== null ? t.totalAmount : null) ?? t.amount ?? (t.value != null ? t.value + taxSum + (t.roundOff || 0) : 0);
+      const sale = (t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : null) ?? (t.value !== undefined && t.value !== null ? t.value : null) ?? (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross);
+      const val = (t.value !== undefined && t.value !== null) ? t.value : (sale ?? gross);
       return {
         id: t.id,
         snapshot_id: snapshot.id,
