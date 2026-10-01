@@ -27,6 +27,7 @@ export interface FinancialSnapshot {
   storageBucket?: string;
   storagePath?: string;
   fileHash?: string;
+  companyName?: string;
   archivedAt?: string;
   archivedBy?: string;
 }

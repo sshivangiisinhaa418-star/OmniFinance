@@ -7,7 +7,7 @@ import { parseAmount, parseBalanceAmount } from '@/lib/import/validator';
 import { saveSnapshotWithTransactions } from '@/lib/storage';
 import { TARGET_FIELDS } from '@/lib/import/columnMapper';
 import { FileUploader } from './FileUploader';
-import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw } from 'lucide-react';
+import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw, Building } from 'lucide-react';
 
 import { calculateFileHash, checkDuplicateFileHash, uploadOriginalExcelToStorage, getStoredUserEmail } from '@/lib/datasets/datasetService';
 
@@ -34,6 +34,25 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
   const [progress, setProgress] = useState(0);
   const [progressStatus, setProgressStatus] = useState('Initializing Upload...');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [companyList, setCompanyList] = useState<string[]>(['BKM Industries Limited']);
+  const [targetCompany, setTargetCompany] = useState<string>('BKM Industries Limited');
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedCompany = localStorage.getItem('omnifinance_selected_company') || 'BKM Industries Limited';
+      const savedList = localStorage.getItem('omnifinance_company_list');
+      setTargetCompany(savedCompany);
+      if (savedList) {
+        try {
+          const parsed = JSON.parse(savedList);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCompanyList(parsed);
+          }
+        } catch (e) {}
+      }
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -145,6 +164,7 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
       const newSnapshot: FinancialSnapshot = {
         id: snapshotId,
         module: datasetType,
+        companyName: targetCompany,
         fileName: file.name,
         fileSize: file.size,
         uploadedAt: new Date().toISOString(),
@@ -235,7 +255,44 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
           )}
 
           {step === 'upload' && !importing && (
-            <FileUploader onWorkbookParsed={handleWorkbookParsed} />
+            <div className="space-y-4">
+              {/* Target Company Selector */}
+              <div className="p-4 rounded-2xl bg-stone-100 dark:bg-stone-950/80 border border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shrink-0">
+                    <Building className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-stone-500 dark:text-stone-400 block">
+                      Target Company / Organization
+                    </span>
+                    <span className="text-xs font-bold text-stone-900 dark:text-white">
+                      Select which company dataset to write in Supabase DB
+                    </span>
+                  </div>
+                </div>
+
+                <select
+                  value={targetCompany}
+                  onChange={e => {
+                    const comp = e.target.value;
+                    setTargetCompany(comp);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('omnifinance_selected_company', comp);
+                    }
+                  }}
+                  className="px-3 py-2 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl text-xs font-bold text-stone-900 dark:text-white focus:outline-none focus:border-orange-500 cursor-pointer shadow-sm min-w-[180px]"
+                >
+                  {companyList.map(comp => (
+                    <option key={comp} value={comp}>
+                      {comp}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <FileUploader onWorkbookParsed={handleWorkbookParsed} />
+            </div>
           )}
 
           {step === 'mapping' && activeSheet && activeFile && (

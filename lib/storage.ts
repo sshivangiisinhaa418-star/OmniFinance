@@ -88,6 +88,7 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
       storageBucket: d.storage_bucket,
       storagePath: d.storage_path,
       fileHash: d.file_hash,
+      companyName: d.company_name || 'BKM Industries Limited',
       archivedAt: d.archived_at,
       archivedBy: d.archived_by,
     }));
@@ -262,10 +263,15 @@ export const saveSnapshotWithTransactions = async (
 
   const tableName = getTableNameForModule(snapshot.module);
 
+  const selectedCompany = typeof window !== 'undefined'
+    ? (localStorage.getItem('omnifinance_selected_company') || 'BKM Industries Limited')
+    : 'BKM Industries Limited';
+
   // 1. Upsert Snapshot Header in Supabase
   const { error: snapErr } = await supabase.from('snapshots').upsert({
     id: snapshot.id,
     module: snapshot.module,
+    company_name: snapshot.companyName || selectedCompany,
     file_name: snapshot.fileName,
     file_size: snapshot.fileSize || 0,
     uploaded_at: snapshot.uploadedAt,
