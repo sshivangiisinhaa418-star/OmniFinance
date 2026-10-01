@@ -58,7 +58,6 @@ import { useFilter } from '@/context/FilterContext';
 export default function ExecutiveSummaryPage() {
   const { filters } = useFilter();
   const [loading, setLoading] = useState(true);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [salesData, setSalesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
   const [purchasesData, setPurchasesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
   const [receivablesData, setReceivablesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
@@ -239,19 +238,9 @@ export default function ExecutiveSummaryPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl shadow-lg shadow-orange-600/25 transition cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <UploadCloud className="w-4 h-4 text-white" />
-            <span>Upload Excel Dataset</span>
-          </button>
-
-          <div className="hidden sm:flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
-            <Activity className="w-4 h-4" />
-            <span>Real-time Enterprise Audit</span>
-          </div>
+        <div className="flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+          <Activity className="w-4 h-4" />
+          <span>Real-time Enterprise Audit</span>
         </div>
       </div>
 
@@ -269,9 +258,8 @@ export default function ExecutiveSummaryPage() {
       {!loading && !hasAnyData ? (
         <EmptyState
           title="No Module Data Available for Summary"
-          description="Financial snapshots have not been uploaded yet. Click below or use the top navigation button to upload your Tally Excel sheet."
-          onQuickUpload={() => setIsUploadModalOpen(true)}
-          showUploadButton={true}
+          description="Financial snapshots have not been uploaded yet."
+          showUploadButton={false}
         />
       ) : isDateFilteredEmpty ? (
         <NoDataInDateRangeCard
@@ -463,15 +451,6 @@ export default function ExecutiveSummaryPage() {
           </div>
         </>
       )}
-
-      <QuickUploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onImportSuccess={() => {
-          setIsUploadModalOpen(false);
-          loadAllModuleSummaries();
-        }}
-      />
     </div>
   );
 }

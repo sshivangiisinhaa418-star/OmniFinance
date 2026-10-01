@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { GlobalFilterState } from '@/types';
 import {
   Search,
@@ -46,6 +47,9 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   setTheme,
 }) => {
+  const pathname = usePathname();
+  const isExecutiveSummaryPage = pathname === '/';
+
   const DEFAULT_COMPANIES = [
     'BKM Industries Limited'
   ];
@@ -257,15 +261,17 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Controls & Presets */}
       <div className="flex items-center gap-3">
-        {/* Quick Upload Button (Visible on ALL pages) */}
-        <button
-          onClick={() => setIsUploadModalOpen(true)}
-          className="flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl shadow-md shadow-orange-600/20 transition cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
-          title="Upload Tally / Excel Data File"
-        >
-          <UploadCloud className="w-4 h-4 text-white shrink-0" />
-          <span className="hidden sm:inline">Upload Excel</span>
-        </button>
+        {/* Quick Upload Button (Visible on all pages EXCEPT Executive Summary) */}
+        {!isExecutiveSummaryPage && (
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl shadow-md shadow-orange-600/20 transition cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+            title="Upload Tally / Excel Data File"
+          >
+            <UploadCloud className="w-4 h-4 text-white shrink-0" />
+            <span className="hidden sm:inline">Upload Excel</span>
+          </button>
+        )}
 
         {/* Dataset History Archive Button */}
         <button
