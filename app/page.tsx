@@ -271,8 +271,8 @@ export default function ExecutiveSummaryPage() {
         />
       ) : (
         <>
-          {/* SECTION 1: MASTER CONSOLIDATED KPIS (7 KEY PILLARS INCL. ACCRUAL COGS MARGIN) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {/* SECTION 1: MASTER CONSOLIDATED KPIS (2 CORE PILLARS: SALES & PROCUREMENT OUTFLOW) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <KpiCard
               title="Total Sales Revenue"
               value={totalSales}
@@ -286,45 +286,6 @@ export default function ExecutiveSummaryPage() {
               icon={ShoppingBag}
               gradientClass="kpi-gradient-orange"
               iconColor="text-orange-500"
-            />
-            <KpiCard
-              title="Accrual COGS Margin"
-              value={`${accrualCogsMarginPct.toFixed(1)}%`}
-              isCurrency={false}
-              icon={TrendingUp}
-              gradientClass="kpi-gradient-emerald"
-              iconColor="text-emerald-400"
-            />
-            <KpiCard
-              title="Direct Register Margin"
-              value={`${directGrossMarginPct.toFixed(1)}%`}
-              isCurrency={false}
-              icon={Percent}
-              gradientClass="kpi-gradient-purple"
-              iconColor="text-purple-400"
-            />
-            <KpiCard
-              title="Net Receivables (Debtors)"
-              value={fmtBalance(totalReceivables, 'dr')}
-              isCurrency={false}
-              icon={Clock}
-              gradientClass="kpi-gradient-amber"
-              iconColor="text-amber-500"
-            />
-            <KpiCard
-              title="Net Payables (Creditors)"
-              value={fmtBalance(totalPayables, 'cr')}
-              isCurrency={false}
-              icon={CreditCard}
-              gradientClass="kpi-gradient-blue"
-              iconColor="text-blue-500"
-            />
-            <KpiCard
-              title="Claimable GST ITC"
-              value={totalGSTClaimable}
-              icon={Receipt}
-              gradientClass="kpi-gradient-emerald"
-              iconColor="text-emerald-400"
             />
           </div>
 
