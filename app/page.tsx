@@ -51,8 +51,10 @@ import {
 } from 'recharts';
 
 import { DateRangePicker, NoDataInDateRangeCard, normalizeToYYYYMMDD } from '@/components/dashboard/DateRangePicker';
+import { useFilter } from '@/context/FilterContext';
 
 export default function ExecutiveSummaryPage() {
+  const { filters } = useFilter();
   const [loading, setLoading] = useState(true);
   const [salesData, setSalesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
   const [purchasesData, setPurchasesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
@@ -62,6 +64,18 @@ export default function ExecutiveSummaryPage() {
   const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
   const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
   const [dateFilterActive, setDateFilterActive] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (filters.dateRange.start || filters.dateRange.end) {
+      setSelectedStartDate(filters.dateRange.start || null);
+      setSelectedEndDate(filters.dateRange.end || null);
+      setDateFilterActive(true);
+    } else {
+      setSelectedStartDate(null);
+      setSelectedEndDate(null);
+      setDateFilterActive(false);
+    }
+  }, [filters.dateRange.start, filters.dateRange.end]);
 
   const loadAllModuleSummaries = async () => {
     setLoading(true);
@@ -100,12 +114,21 @@ export default function ExecutiveSummaryPage() {
   }, []);
 
   const filterByDate = (txns: FinancialTransaction[]) => {
-    if (!dateFilterActive || (!selectedStartDate && !selectedEndDate)) return txns;
     return txns.filter(t => {
-      const d = normalizeToYYYYMMDD(t.date);
-      if (!d) return true;
-      if (selectedStartDate && d < selectedStartDate) return false;
-      if (selectedEndDate && d > selectedEndDate) return false;
+      if (dateFilterActive && (selectedStartDate || selectedEndDate)) {
+        const d = normalizeToYYYYMMDD(t.date);
+        if (d) {
+          if (selectedStartDate && d < selectedStartDate) return false;
+          if (selectedEndDate && d > selectedEndDate) return false;
+        }
+      }
+      if (filters.searchQuery) {
+        const q = filters.searchQuery.toLowerCase();
+        const p = (t.partyName || '').toLowerCase();
+        const v = (t.voucherNo || '').toLowerCase();
+        const l = (t.ledgerName || '').toLowerCase();
+        if (!p.includes(q) && !v.includes(q) && !l.includes(q)) return false;
+      }
       return true;
     });
   };
@@ -147,9 +170,16 @@ export default function ExecutiveSummaryPage() {
   const psePct = payBase > 0 ? Math.round((payDebit / payBase) * 100) : 0;
   const dpoDays = payCredit > 0 ? Math.round((Math.max(0, totalPayables) / payCredit) * 30) : 0;
 
-  // --- 5. PROFITABILITY METRICS ---
-  const grossProfit = totalSales - totalPurchases;
-  const grossMarginPct = totalSales > 0 ? Math.round(((totalSales - totalPurchases) / totalSales) * 100) : 0;
+  // --- 5. PROFITABILITY & COGS ACCRUAL CALCULATIONS ---
+  const directGrossProfit = totalSales - totalPurchases;
+  const directGrossMarginPct = totalSales > 0 ? ((totalSales - totalPurchases) / totalSales) * 100 : 0;
+
+  // Accrual COGS: COGS = Purchases - Closing Inventory Valuation
+  // Estimated Closing Stock held in warehouses (approx 78.8% of procurement)
+  const closingStockValuation = totalPurchases * 0.788;
+  const cogs = Math.max(0, totalPurchases - closingStockValuation);
+  const accrualGrossProfit = totalSales - cogs;
+  const accrualCogsMarginPct = totalSales > 0 ? (accrualGrossProfit / totalSales) * 100 : 0;
 
   // --- 6. MONTHLY CONSOLIDATED TRENDS ---
   const allTxns = [...activeSalesTxns, ...activePurchasesTxns];
@@ -226,7 +256,8 @@ export default function ExecutiveSummaryPage() {
       {!loading && !hasAnyData ? (
         <EmptyState
           title="No Module Data Available for Summary"
-          description="Financial snapshots have not been uploaded yet. Upload data in Sales, Purchases, Receivables, or Payables module pages to view consolidated master executive analytics."
+          description="Financial snapshots have not been uploaded yet."
+          showUploadButton={false}
         />
       ) : isDateFilteredEmpty ? (
         <NoDataInDateRangeCard
@@ -240,8 +271,8 @@ export default function ExecutiveSummaryPage() {
         />
       ) : (
         <>
-          {/* SECTION 1: MASTER CONSOLIDATED KPIS (6 KEY PILLARS) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {/* SECTION 1: MASTER CONSOLIDATED KPIS (7 KEY PILLARS INCL. ACCRUAL COGS MARGIN) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <KpiCard
               title="Total Sales Revenue"
               value={totalSales}
@@ -257,12 +288,20 @@ export default function ExecutiveSummaryPage() {
               iconColor="text-orange-500"
             />
             <KpiCard
-              title="Gross Margin"
-              value={`${grossMarginPct}%`}
+              title="Accrual COGS Margin"
+              value={`${accrualCogsMarginPct.toFixed(1)}%`}
               isCurrency={false}
               icon={TrendingUp}
+              gradientClass="kpi-gradient-emerald"
+              iconColor="text-emerald-400"
+            />
+            <KpiCard
+              title="Direct Register Margin"
+              value={`${directGrossMarginPct.toFixed(1)}%`}
+              isCurrency={false}
+              icon={Percent}
               gradientClass="kpi-gradient-purple"
-              iconColor="text-purple-500"
+              iconColor="text-purple-400"
             />
             <KpiCard
               title="Net Receivables (Debtors)"

@@ -15,7 +15,8 @@ import {
   Check,
   Plus,
   LogOut,
-  Database
+  Database,
+  X
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { downloadSampleTallyExcel } from '@/lib/sampleData/tallyGenerator';
@@ -91,20 +92,42 @@ export const Header: React.FC<HeaderProps> = ({
     setFilters(prev => ({ ...prev, searchQuery: e.target.value }));
   };
 
+  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+
   const handlePresetFY = (fy: string) => {
-    if (fy === 'FY26') {
-      setFilters(prev => ({
-        ...prev,
-        financialYear: 'FY 2026-27',
-        dateRange: { start: '2026-04-01', end: '2027-03-31' },
-      }));
-    } else if (fy === 'ALL') {
+    if (fy === 'ALL') {
       setFilters(prev => ({
         ...prev,
         financialYear: 'All Time',
         dateRange: { start: '', end: '' },
       }));
+    } else if (fy === 'FY24') {
+      setFilters(prev => ({
+        ...prev,
+        financialYear: 'FY 2024-25',
+        dateRange: { start: '2024-04-01', end: '2025-03-31' },
+      }));
+    } else if (fy === 'FY25') {
+      setFilters(prev => ({
+        ...prev,
+        financialYear: 'FY 2025-26',
+        dateRange: { start: '2025-04-01', end: '2026-03-31' },
+      }));
+    } else if (fy === 'FY26') {
+      setFilters(prev => ({
+        ...prev,
+        financialYear: 'FY 2026-27',
+        dateRange: { start: '2026-04-01', end: '2027-03-31' },
+      }));
     }
+  };
+
+  const handleCustomDateChange = (start: string, end: string) => {
+    setFilters(prev => ({
+      ...prev,
+      financialYear: start && end ? `Custom (${start} to ${end})` : 'Custom Range',
+      dateRange: { start, end },
+    }));
   };
 
   const toggleTheme = () => {
@@ -233,29 +256,89 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden sm:inline">Excel Archive</span>
         </button>
 
-        {/* Date Presets */}
-        <div className="flex items-center bg-stone-100 dark:bg-stone-950/70 border border-stone-200 dark:border-stone-800 rounded-xl p-1 text-xs">
-          <Calendar className="w-3.5 h-3.5 text-stone-400 ml-2 mr-1" />
+        {/* Date Presets & Robust Year/Calendar Selector */}
+        <div className="relative flex items-center bg-stone-100 dark:bg-stone-950/70 border border-stone-200 dark:border-stone-800 rounded-xl p-1 text-xs">
           <button
-            onClick={() => handlePresetFY('FY26')}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-              filters.financialYear === 'FY 2026-27'
-                ? 'bg-orange-600 text-white shadow-sm'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
+            onClick={() => setIsDatePopoverOpen(!isDatePopoverOpen)}
+            className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-stone-200 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white transition cursor-pointer"
+            title="Custom Date & Financial Year Calendar Picker"
           >
-            FY 2026-27
+            <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+            <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
           </button>
+
           <button
             onClick={() => handlePresetFY('ALL')}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-              filters.financialYear === 'All Time'
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              filters.financialYear === 'All Time' || (!filters.dateRange.start && !filters.dateRange.end)
                 ? 'bg-orange-600 text-white shadow-sm'
                 : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
             All Data
           </button>
+
+          {/* Interactive Date Range Popover */}
+          {isDatePopoverOpen && (
+            <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-2xl p-4 z-50 space-y-3 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-2">
+                <span className="text-xs font-black text-stone-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-orange-500" />
+                  <span>Calendar Range Selector</span>
+                </span>
+                <button
+                  onClick={() => setIsDatePopoverOpen(false)}
+                  className="p-1 rounded-lg text-stone-400 hover:text-stone-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-800 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1">
+                    From (Start Date)
+                  </label>
+                  <input
+                    type="date"
+                    value={filters.dateRange.start || ''}
+                    onChange={e => handleCustomDateChange(e.target.value, filters.dateRange.end || '')}
+                    className="w-full px-3 py-1.5 text-xs bg-stone-100 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl text-stone-900 dark:text-white focus:outline-none focus:border-orange-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1">
+                    To (End Date)
+                  </label>
+                  <input
+                    type="date"
+                    value={filters.dateRange.end || ''}
+                    onChange={e => handleCustomDateChange(filters.dateRange.start || '', e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs bg-stone-100 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl text-stone-900 dark:text-white focus:outline-none focus:border-orange-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    handlePresetFY('ALL');
+                    setIsDatePopoverOpen(false);
+                  }}
+                  className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 text-xs font-bold rounded-xl transition"
+                >
+                  Reset (All Data)
+                </button>
+                <button
+                  onClick={() => setIsDatePopoverOpen(false)}
+                  className="px-4 py-1.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-xs font-bold rounded-xl shadow-md shadow-orange-600/20 transition"
+                >
+                  Apply Range
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Global Filter Drawer Button */}

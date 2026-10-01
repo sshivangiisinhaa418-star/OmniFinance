@@ -31,6 +31,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
   const [parsedResult, setParsedResult] = useState<ParsedWorkbookResult | null>(null);
   const [customMappings, setCustomMappings] = useState<Record<string, string>>({});
   const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressStatus, setProgressStatus] = useState('Initializing Upload...');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -41,6 +43,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     setParsedResult(null);
     setCustomMappings({});
     setImporting(false);
+    setProgress(0);
+    setProgressStatus('Initializing Upload...');
     setSuccessMessage(null);
   };
 
@@ -64,6 +68,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     setActiveFile(file);
     setParsedResult(result);
     setImporting(true);
+    setProgress(10);
+    setProgressStatus('Inspecting Excel File & Hashing...');
 
     try {
       const targetSheet = result.sheets[0];
@@ -73,6 +79,9 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
 
       // 1. Calculate file SHA-256 hash & check duplicate
       const fileHash = await calculateFileHash(file);
+      setProgress(30);
+      setProgressStatus('Checking Duplicate Hashes...');
+
       if (fileHash) {
         const duplicate = await checkDuplicateFileHash(fileHash, datasetType);
         if (duplicate) {
@@ -81,15 +90,20 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
           );
           if (!confirmProceed) {
             setImporting(false);
+            setProgress(0);
             return;
           }
         }
       }
 
       // 2. Upload raw Excel file to private Supabase Storage bucket 'finance-excel'
+      setProgress(50);
+      setProgressStatus('Uploading to Storage Bucket...');
       const storageResult = await uploadOriginalExcelToStorage(file, datasetType, snapshotId);
 
       // 3. Build mappings using auto-mapped column target fields
+      setProgress(70);
+      setProgressStatus('Parsing Column Schema & Rows...');
       const mappings = targetSheet.columnMappings.map(m => ({
         excelHeader: m.excelHeader,
         targetField: m.targetField,
@@ -146,7 +160,12 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
         fileHash: fileHash || undefined,
       };
 
+      setProgress(88);
+      setProgressStatus(`Inserting ${transformedTxns.length} Records to Database...`);
       await saveSnapshotWithTransactions(newSnapshot, transformedTxns);
+
+      setProgress(100);
+      setProgressStatus('Upload & Database Sync Complete!');
 
       setImporting(false);
       setStep('success');
@@ -192,7 +211,30 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {step === 'upload' && (
+          {importing && (
+            <div className="p-8 space-y-5 text-center animate-fade-in my-4">
+              <div className="w-16 h-16 rounded-full bg-orange-500/10 text-orange-500 mx-auto flex items-center justify-center animate-spin">
+                <RefreshCw className="w-8 h-8" />
+              </div>
+              <div className="space-y-3 max-w-md mx-auto">
+                <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-stone-900 dark:text-white">
+                  <span>{progressStatus || 'Uploading & Processing Dataset...'}</span>
+                  <span className="text-orange-600 dark:text-orange-400 font-mono text-base font-black">{progress}%</span>
+                </div>
+                <div className="w-full bg-stone-200 dark:bg-stone-800 rounded-full h-3.5 overflow-hidden p-0.5 border border-stone-300 dark:border-stone-700 shadow-inner">
+                  <div
+                    className="bg-gradient-to-r from-orange-600 via-amber-500 to-amber-400 h-full rounded-full transition-all duration-300 shadow-md shadow-orange-500/30"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">
+                  Saving original file hash, verifying columns, and writing records into Supabase...
+                </p>
+              </div>
+            </div>
+          )}
+
+          {step === 'upload' && !importing && (
             <FileUploader onWorkbookParsed={handleWorkbookParsed} />
           )}
 

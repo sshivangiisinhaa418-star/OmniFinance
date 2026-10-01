@@ -14,6 +14,18 @@ interface KpiCardProps {
   isCurrency?: boolean;
 }
 
+const formatIndianCompact = (num: number): string => {
+  if (isNaN(num)) return '0.00';
+  const abs = Math.abs(num);
+  if (abs >= 10000000) {
+    return `${(num / 10000000).toFixed(2)} Cr`;
+  }
+  if (abs >= 100000) {
+    return `${(num / 100000).toFixed(2)} L`;
+  }
+  return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 export const KpiCard: React.FC<KpiCardProps> = ({
   title,
   value,
@@ -27,34 +39,41 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   const isPositive = (changePct ?? 0) > 0;
   const isNegative = (changePct ?? 0) < 0;
 
-  const formattedValue =
+  const fullFormattedValue =
     typeof value === 'number'
       ? isCurrency
         ? `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : value.toLocaleString()
+      : String(value);
+
+  const displayValue =
+    typeof value === 'number'
+      ? isCurrency
+        ? `₹${formatIndianCompact(value)}`
+        : value.toLocaleString()
       : value;
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-stone-200 dark:border-stone-800 p-4 bg-white dark:bg-stone-900 glass-panel ${gradientClass} transition-all duration-200 hover:border-stone-300 dark:hover:border-stone-700 hover:shadow-lg min-w-0`}>
-      <div className="flex items-start justify-between gap-2">
+    <div className={`relative overflow-hidden rounded-2xl border border-stone-200 dark:border-stone-800 p-4 bg-white dark:bg-stone-900 glass-panel ${gradientClass} transition-all duration-200 hover:border-stone-300 dark:hover:border-stone-700 hover:shadow-lg min-w-0 flex flex-col justify-between`}>
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <span className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider block truncate">
+          <span className="text-[10px] sm:text-[11px] font-extrabold text-stone-500 dark:text-stone-400 uppercase tracking-wider block leading-tight">
             {title}
           </span>
           <h3
-            className="text-sm sm:text-base lg:text-lg font-black text-stone-900 dark:text-white mt-1 font-mono tracking-tight truncate"
-            title={String(formattedValue)}
+            className="text-base sm:text-lg lg:text-xl font-black text-stone-900 dark:text-white mt-1.5 font-mono tracking-tight whitespace-nowrap"
+            title={fullFormattedValue}
           >
-            {formattedValue}
+            {displayValue}
           </h3>
         </div>
-        <div className={`p-2.5 rounded-xl bg-stone-100 dark:bg-stone-950/60 border border-stone-200 dark:border-stone-800 ${iconColor} shrink-0`}>
+        <div className={`p-2.5 rounded-xl bg-stone-100 dark:bg-stone-950/70 border border-stone-200 dark:border-stone-800 ${iconColor} shrink-0 shadow-sm`}>
           <Icon className="w-4 h-4" />
         </div>
       </div>
 
       {changePct !== undefined && (
-        <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-stone-100 dark:border-stone-800/60 text-xs">
+        <div className="flex items-center gap-2 mt-3 pt-2 border-t border-stone-100 dark:border-stone-800/60 text-xs">
           <div
             className={`flex items-center gap-1 font-bold px-2 py-0.5 rounded-md text-[10px] ${
               isPositive
