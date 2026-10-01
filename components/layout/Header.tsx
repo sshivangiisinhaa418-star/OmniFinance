@@ -23,6 +23,8 @@ import { downloadSampleTallyExcel } from '@/lib/sampleData/tallyGenerator';
 import { DatasetHistoryModal } from '@/components/datasets/DatasetHistoryModal';
 import pkg from '@/package.json';
 
+import { getAvailableCompaniesFromDB } from '@/lib/storage';
+
 interface HeaderProps {
   filters: GlobalFilterState;
   setFilters: React.Dispatch<React.SetStateAction<GlobalFilterState>>;
@@ -53,32 +55,38 @@ export const Header: React.FC<HeaderProps> = ({
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [lastUpdate] = useState<string>('22 Sep 2026, 03:15 PM');
 
-  // Load saved company state on mount
+  // Load saved company state on mount and sync with Supabase DB
   React.useEffect(() => {
     const savedCompany = localStorage.getItem('omnifinance_selected_company');
     const savedList = localStorage.getItem('omnifinance_company_list');
     
+    let localList: string[] = DEFAULT_COMPANIES;
     if (savedList) {
       try {
         const parsed = JSON.parse(savedList);
-        // Filter out old removed demo companies
         const legacyMock = ['Rajmahal Enterprise Pvt Ltd', 'Burnpur Engineering Works', 'Silvassa Synthetics Ltd', 'Vedic Traders & Logistics', 'Acme Enterprise Pvt Ltd', 'Tally Global Industries', 'Vedic Traders Pvt Ltd'];
         const filtered = parsed.filter((c: string) => !legacyMock.includes(c));
         if (Array.isArray(filtered) && filtered.length > 0) {
-          setCompanies(filtered);
-        } else {
-          setCompanies(DEFAULT_COMPANIES);
+          localList = filtered;
         }
-      } catch (e) {
-        setCompanies(DEFAULT_COMPANIES);
-      }
-    } else {
-      setCompanies(DEFAULT_COMPANIES);
+      } catch (e) {}
     }
     
+    setCompanies(localList);
     if (savedCompany) {
       setSelectedCompany(savedCompany);
     }
+
+    // Also fetch DB companies from Supabase
+    getAvailableCompaniesFromDB().then((dbCompanies) => {
+      if (dbCompanies && dbCompanies.length > 0) {
+        setCompanies(prev => {
+          const merged = Array.from(new Set([...prev, ...dbCompanies]));
+          localStorage.setItem('omnifinance_company_list', JSON.stringify(merged));
+          return merged;
+        });
+      }
+    });
   }, []);
 
   // Save selected company to localStorage

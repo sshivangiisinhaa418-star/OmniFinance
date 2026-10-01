@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { DatasetType, FinancialSnapshot } from '@/types';
 import { parseExcelFile, ParsedWorkbookResult, transformSheetToTransactions } from '@/lib/import/excelParser';
 import { parseAmount, parseBalanceAmount } from '@/lib/import/validator';
-import { saveSnapshotWithTransactions } from '@/lib/storage';
+import { saveSnapshotWithTransactions, getAvailableCompaniesFromDB } from '@/lib/storage';
 import { TARGET_FIELDS } from '@/lib/import/columnMapper';
 import { FileUploader } from './FileUploader';
 import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw, Building } from 'lucide-react';
@@ -39,18 +39,27 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
   const [targetCompany, setTargetCompany] = useState<string>('BKM Industries Limited');
 
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isOpen) {
       const savedCompany = localStorage.getItem('omnifinance_selected_company') || 'BKM Industries Limited';
       const savedList = localStorage.getItem('omnifinance_company_list');
       setTargetCompany(savedCompany);
+      
+      let localList: string[] = ['BKM Industries Limited'];
       if (savedList) {
         try {
           const parsed = JSON.parse(savedList);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setCompanyList(parsed);
+            localList = parsed;
           }
         } catch (e) {}
       }
+      setCompanyList(localList);
+
+      getAvailableCompaniesFromDB().then(dbCompanies => {
+        if (dbCompanies && dbCompanies.length > 0) {
+          setCompanyList(prev => Array.from(new Set([...prev, ...dbCompanies])));
+        }
+      });
     }
   }, [isOpen]);
 

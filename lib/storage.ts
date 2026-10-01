@@ -104,6 +104,24 @@ export const getLatestSnapshotForModule = async (module: DatasetType): Promise<F
   return activeSnapshots.length > 0 ? activeSnapshots[0] : null;
 };
 
+// Fetch all distinct company names stored in Supabase DB snapshots table
+export const getAvailableCompaniesFromDB = async (): Promise<string[]> => {
+  if (!isSupabaseConfigured() || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('snapshots')
+      .select('company_name');
+    if (error || !data) return [];
+    const dbCompanies = data
+      .map((row: any) => row.company_name)
+      .filter((name: string) => name && typeof name === 'string' && name.trim().length > 0);
+    return Array.from(new Set(dbCompanies));
+  } catch (err) {
+    console.error('Error fetching DB companies:', err);
+    return [];
+  }
+};
+
 // Retrieve transactions for a list of snapshot IDs in a single query
 export const getTransactionsForSnapshotIds = async (
   snapshotIds: string[],
