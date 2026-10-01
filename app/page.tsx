@@ -289,9 +289,6 @@ export default function ExecutiveSummaryPage() {
             />
           </div>
 
-          {/* AI FINANCIAL AUDIT & COMPLIANCE SCANNER CENTER */}
-          <AuditHealthCard summary={auditSummary} />
-
           {/* SECTION 2: 4 MODULE SUMMARY CARDS GRID */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Sales & Revenue Card */}
