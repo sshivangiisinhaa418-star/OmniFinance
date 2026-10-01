@@ -430,8 +430,8 @@ export default function LoginPage() {
         <p className="text-[10px] text-stone-600 font-mono">
           Email verification enforced. Access attempts are logged.
         </p>
-        <p className="text-[9px] text-stone-700/60 font-mono tracking-widest select-none pt-2 opacity-50 hover:opacity-100 transition-opacity">
-          vXE.10.0
+        <p className="text-[10px] text-white font-mono tracking-widest select-none pt-2 font-black">
+          vXE.10.1
         </p>
       </div>
     </div>
