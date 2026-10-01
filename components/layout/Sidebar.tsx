@@ -35,6 +35,8 @@ import {
   Flame,
 } from 'lucide-react';
 
+import pkg from '@/package.json';
+
 interface SidebarProps {
   collapsed: boolean;
   setCollapsed: (collapsed: boolean) => void;
@@ -69,8 +71,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-black text-stone-900 dark:text-white text-base tracking-wide leading-tight flex items-center gap-1">
+              <span className="font-black text-stone-900 dark:text-white text-base tracking-wide leading-tight flex items-center gap-1.5">
                 Omni<span className="text-orange-600 dark:text-orange-500 font-extrabold">Finance</span>
+                <span className="px-1.5 py-0.5 text-[10px] font-black text-white bg-gradient-to-r from-orange-600 to-amber-600 rounded-md shadow-sm border border-orange-400/30 shrink-0">
+                  v{pkg.version}
+                </span>
               </span>
               <span className="text-[10px] text-orange-600 dark:text-amber-500 uppercase tracking-widest font-extrabold">
                 Executive Suite
@@ -134,19 +139,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
 
       {/* User Footer */}
       <div className="p-3 border-t border-stone-200 dark:border-stone-800 bg-stone-50/80 dark:bg-stone-950/60">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-md shadow-orange-500/20">
-            TV
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 truncate">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-md shadow-orange-500/20">
+              TV
+            </div>
+            {!collapsed && (
+              <div className="flex flex-col truncate">
+                <span className="text-xs font-bold text-stone-900 dark:text-stone-200 truncate">
+                  Senior Financial Architect
+                </span>
+                <span className="text-[10px] text-orange-600 dark:text-amber-500 font-extrabold truncate">
+                  TallyVision Executive
+                </span>
+              </div>
+            )}
           </div>
           {!collapsed && (
-            <div className="flex flex-col truncate">
-              <span className="text-xs font-bold text-stone-900 dark:text-stone-200 truncate">
-                Senior Financial Architect
-              </span>
-              <span className="text-[10px] text-orange-600 dark:text-amber-500 font-extrabold truncate">
-                TallyVision Executive
-              </span>
-            </div>
+            <span className="px-2 py-0.5 text-[10px] font-black text-white bg-stone-900 dark:bg-stone-800 border border-stone-700 rounded-lg shadow-sm shrink-0">
+              v{pkg.version}
+            </span>
           )}
         </div>
       </div>

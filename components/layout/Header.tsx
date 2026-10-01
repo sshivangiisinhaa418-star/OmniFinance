@@ -20,6 +20,7 @@ import {
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { downloadSampleTallyExcel } from '@/lib/sampleData/tallyGenerator';
 import { DatasetHistoryModal } from '@/components/datasets/DatasetHistoryModal';
+import pkg from '@/package.json';
 
 interface HeaderProps {
   filters: GlobalFilterState;
@@ -278,6 +279,11 @@ export const Header: React.FC<HeaderProps> = ({
             <Moon className="w-4 h-4 text-orange-600" />
           )}
         </button>
+
+        {/* White Text Version Badge */}
+        <div className="hidden sm:flex items-center px-2.5 py-1 bg-stone-900 dark:bg-stone-800 text-white border border-stone-700 rounded-xl text-xs font-black shadow-sm shrink-0">
+          <span className="text-white tracking-wider">v{pkg.version}</span>
+        </div>
 
         {/* Sign Out Button */}
         <button
