@@ -16,10 +16,12 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   title = 'No Financial Data Available',
   description = 'No financial records available in the selected criteria.',
   onQuickUpload,
-  showUploadButton = false,
+  showUploadButton = true,
 }) => {
+  const displayButton = showUploadButton || Boolean(onQuickUpload);
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[480px] p-8 bg-white dark:bg-stone-900/60 border-2 border-dashed border-stone-200 dark:border-stone-800 rounded-3xl glass-panel text-center animate-fade-in my-6 shadow-sm">
+    <div className="flex flex-col items-center justify-center min-h-[440px] p-8 bg-white dark:bg-stone-900/60 border-2 border-dashed border-stone-200 dark:border-stone-800 rounded-3xl glass-panel text-center animate-fade-in my-6 shadow-sm">
       <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-600 dark:text-orange-400 mb-6 shadow-xl shadow-orange-500/10">
         <FileSpreadsheet className="w-8 h-8" />
       </div>
@@ -29,25 +31,25 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         {description}
       </p>
 
-      {showUploadButton && (
+      {displayButton && (
         <div className="flex flex-wrap items-center justify-center gap-4">
           {onQuickUpload ? (
             <button
               onClick={onQuickUpload}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-600/25 transition cursor-pointer"
+              className="flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-2xl shadow-xl shadow-orange-600/30 hover:scale-[1.03] active:scale-[0.97] transition cursor-pointer"
             >
-              <UploadCloud className="w-4 h-4" />
+              <UploadCloud className="w-4 h-4 text-white" />
               <span>Upload Data For This Page</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 text-white/80" />
             </button>
           ) : (
             <Link
               href="/import"
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-600/25 transition"
+              className="flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-2xl shadow-xl shadow-orange-600/30 hover:scale-[1.03] active:scale-[0.97] transition"
             >
-              <UploadCloud className="w-4 h-4" />
+              <UploadCloud className="w-4 h-4 text-white" />
               <span>Upload Tally Excel File</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 text-white/80" />
             </Link>
           )}
         </div>
