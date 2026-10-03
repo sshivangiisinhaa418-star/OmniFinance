@@ -30,8 +30,13 @@ export default function InventoryPage() {
     const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
-    const txns = await getActiveTransactionsForModule('inventory', activeId);
-    setTransactions(txns);
+    const [invTxns, purTxns] = await Promise.all([
+      getActiveTransactionsForModule('inventory', activeId),
+      getActiveTransactionsForModule('purchases'),
+    ]);
+
+    const itemTxns = purTxns.filter(t => t.itemName || (t.quantity && t.quantity > 0));
+    setTransactions(invTxns.length > 0 ? invTxns : itemTxns);
     setLoading(false);
   };
 

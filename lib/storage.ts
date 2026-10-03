@@ -32,7 +32,10 @@ const getTableNameForModule = (module: DatasetType): string => {
 // DEDICATED SUPABASE DATABASE SNAPSHOT ENGINE
 // ==========================================
 
-export const getSnapshotsForModule = async (module: DatasetType): Promise<FinancialSnapshot[]> => {
+export const getSnapshotsForModule = async (
+  module: DatasetType,
+  filterByCompany: boolean = true
+): Promise<FinancialSnapshot[]> => {
   if (!isSupabaseConfigured() || !supabase) {
     console.error('Supabase client is not configured.');
     return [];
@@ -72,7 +75,7 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
 
     if (allSnaps.length === 0) return [];
 
-    return allSnaps.map(d => ({
+    const mapped: FinancialSnapshot[] = allSnaps.map(d => ({
       id: d.id,
       module: d.module as DatasetType,
       fileName: d.file_name,
@@ -92,6 +95,8 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
       archivedAt: d.archived_at,
       archivedBy: d.archived_by,
     }));
+
+    return mapped;
   } catch (err) {
     console.error(`Exception fetching snapshots for ${module} from Supabase:`, err);
     return [];
@@ -99,7 +104,7 @@ export const getSnapshotsForModule = async (module: DatasetType): Promise<Financ
 };
 
 export const getLatestSnapshotForModule = async (module: DatasetType): Promise<FinancialSnapshot | null> => {
-  const snapshots = await getSnapshotsForModule(module);
+  const snapshots = await getSnapshotsForModule(module, true);
   const activeSnapshots = snapshots.filter(s => s.status === 'active');
   return activeSnapshots.length > 0 ? activeSnapshots[0] : null;
 };
@@ -264,7 +269,7 @@ export const getActiveTransactionsForModule = async (
     return getSnapshotTransactions(specificSnapshotId, module);
   }
 
-  const snapshots = await getSnapshotsForModule(module);
+  const snapshots = await getSnapshotsForModule(module, true);
   const activeSnapshotIds = snapshots.filter(s => s.status === 'active').map(s => s.id);
   if (activeSnapshotIds.length === 0) return [];
 
@@ -581,12 +586,13 @@ export const clearAllData = async (): Promise<void> => {
   }
 };
 
-// Backward compatibility helpers
 export const getStoredTransactions = async (datasetFilter?: string): Promise<FinancialTransaction[]> => {
   if (datasetFilter) {
     return getActiveTransactionsForModule(datasetFilter as DatasetType);
   }
-  return [];
+  const modules: DatasetType[] = ['sales', 'purchases', 'receivables', 'payables', 'payments', 'receipts'];
+  const results = await Promise.all(modules.map(m => getActiveTransactionsForModule(m)));
+  return results.flat();
 };
 
 export const saveTransactions = async (

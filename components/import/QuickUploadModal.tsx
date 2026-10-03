@@ -34,34 +34,15 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
   const [progress, setProgress] = useState(0);
   const [progressStatus, setProgressStatus] = useState('Initializing Upload...');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [selectedModuleOverride, setSelectedModuleOverride] = useState<DatasetType | null>(null);
+  const [mismatchData, setMismatchData] = useState<{
+    detectedModule: DatasetType;
+    expectedModule: DatasetType;
+    file: File;
+    result: ParsedWorkbookResult;
+  } | null>(null);
 
-  const [companyList, setCompanyList] = useState<string[]>(['BKM Industries Limited']);
-  const [targetCompany, setTargetCompany] = useState<string>('BKM Industries Limited');
-
-  React.useEffect(() => {
-    if (typeof window !== 'undefined' && isOpen) {
-      const savedCompany = localStorage.getItem('omnifinance_selected_company') || 'BKM Industries Limited';
-      const savedList = localStorage.getItem('omnifinance_company_list');
-      setTargetCompany(savedCompany);
-      
-      let localList: string[] = ['BKM Industries Limited'];
-      if (savedList) {
-        try {
-          const parsed = JSON.parse(savedList);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            localList = parsed;
-          }
-        } catch (e) {}
-      }
-      setCompanyList(localList);
-
-      getAvailableCompaniesFromDB().then(dbCompanies => {
-        if (dbCompanies && dbCompanies.length > 0) {
-          setCompanyList(prev => Array.from(new Set([...prev, ...dbCompanies])));
-        }
-      });
-    }
-  }, [isOpen]);
+  const targetCompany = 'BKM Industries Limited';
 
   if (!isOpen) return null;
 
@@ -74,6 +55,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     setProgress(0);
     setProgressStatus('Initializing Upload...');
     setSuccessMessage(null);
+    setSelectedModuleOverride(null);
+    setMismatchData(null);
   };
 
   const handleClose = () => {
@@ -87,12 +70,33 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
 
   const handleConfirmAndSaveSnapshot = async () => {
     if (!parsedResult || !activeFile) return;
-    await handleWorkbookParsed(parsedResult, activeFile);
+    await handleWorkbookParsed(parsedResult, activeFile, selectedModuleOverride || undefined);
   };
 
-  const handleWorkbookParsed = async (result: ParsedWorkbookResult, file: File) => {
+  const handleWorkbookParsed = async (
+    result: ParsedWorkbookResult,
+    file: File,
+    overrideModule?: DatasetType
+  ) => {
     if (!result.sheets || result.sheets.length === 0) return;
 
+    const targetSheet = result.sheets[0];
+    const detectedModule = targetSheet.datasetType;
+    const expectedModule = defaultDatasetType || 'sales';
+
+    // Smart Mismatch Detection: pause upload if file type differs from page expected module
+    if (!overrideModule && detectedModule !== expectedModule && !mismatchData) {
+      setMismatchData({
+        detectedModule,
+        expectedModule,
+        file,
+        result,
+      });
+      setSelectedModuleOverride(detectedModule);
+      return;
+    }
+
+    setMismatchData(null);
     setActiveFile(file);
     setParsedResult(result);
     setImporting(true);
@@ -100,8 +104,7 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     setProgressStatus('Inspecting Excel File & Hashing...');
 
     try {
-      const targetSheet = result.sheets[0];
-      const datasetType = defaultDatasetType || targetSheet.datasetType;
+      const datasetType = overrideModule || selectedModuleOverride || defaultDatasetType || targetSheet.datasetType;
       const importId = 'imp_' + Math.random().toString(36).substring(2, 9);
       const snapshotId = `snap_${datasetType}_${new Date().toISOString().replace(/[^0-9]/g, '').substring(0, 14)}`;
 
@@ -198,7 +201,7 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
 
       setImporting(false);
       setStep('success');
-      setSuccessMessage(`Direct Upload Complete! Processed ${transformedTxns.length} records into Supabase for "${file.name}".`);
+      setSuccessMessage(`Direct Upload Complete! Processed ${transformedTxns.length} records into Supabase for "${file.name}" [Module: ${datasetType.toUpperCase()}].`);
 
       setTimeout(() => {
         handleClose();
@@ -263,45 +266,90 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
             </div>
           )}
 
-          {step === 'upload' && !importing && (
-            <div className="space-y-4">
-              {/* Target Company Selector */}
-              <div className="p-4 rounded-2xl bg-stone-100 dark:bg-stone-950/80 border border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shrink-0">
-                    <Building className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-stone-500 dark:text-stone-400 block">
-                      Target Company / Organization
-                    </span>
-                    <span className="text-xs font-bold text-stone-900 dark:text-white">
-                      Select which company dataset to write in Supabase DB
-                    </span>
-                  </div>
+          {mismatchData && !importing && (
+            <div className="p-6 space-y-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl animate-fade-in my-2">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-extrabold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                    Module Mismatch Detected
+                  </h4>
+                  <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+                    The uploaded file <strong className="text-stone-900 dark:text-white">"{mismatchData.file.name}"</strong> appears to contain <span className="font-extrabold text-amber-600 dark:text-amber-400 uppercase">{mismatchData.detectedModule}</span> data, but you opened Quick Upload from the <span className="font-extrabold text-orange-600 dark:text-orange-400 uppercase">{mismatchData.expectedModule}</span> page.
+                  </p>
                 </div>
-
-                <select
-                  value={targetCompany}
-                  onChange={e => {
-                    const comp = e.target.value;
-                    setTargetCompany(comp);
-                    if (typeof window !== 'undefined') {
-                      localStorage.setItem('omnifinance_selected_company', comp);
-                    }
-                  }}
-                  className="px-3 py-2 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl text-xs font-bold text-stone-900 dark:text-white focus:outline-none focus:border-orange-500 cursor-pointer shadow-sm min-w-[180px]"
-                >
-                  {companyList.map(comp => (
-                    <option key={comp} value={comp}>
-                      {comp}
-                    </option>
-                  ))}
-                </select>
               </div>
 
-              <FileUploader onWorkbookParsed={handleWorkbookParsed} />
+              <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-amber-500/20 space-y-3 text-xs">
+                <span className="font-bold text-stone-900 dark:text-white block">
+                  Select Target Destination Module:
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedModuleOverride(mismatchData.detectedModule)}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between cursor-pointer transition ${
+                      selectedModuleOverride === mismatchData.detectedModule
+                        ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold'
+                        : 'border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-extrabold uppercase">{mismatchData.detectedModule} Register</div>
+                      <div className="text-[11px] opacity-80">Reroute to auto-detected module (Recommended)</div>
+                    </div>
+                    {selectedModuleOverride === mismatchData.detectedModule && <Check className="w-4 h-4 text-amber-500" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedModuleOverride(mismatchData.expectedModule)}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between cursor-pointer transition ${
+                      selectedModuleOverride === mismatchData.expectedModule
+                        ? 'border-orange-500 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold'
+                        : 'border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-extrabold uppercase">{mismatchData.expectedModule} Register</div>
+                      <div className="text-[11px] opacity-80">Upload to current page anyway</div>
+                    </div>
+                    {selectedModuleOverride === mismatchData.expectedModule && <Check className="w-4 h-4 text-orange-500" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMismatchData(null);
+                    resetState();
+                  }}
+                  className="px-4 py-2 rounded-xl border border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300 text-xs font-bold hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                >
+                  Cancel Upload
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (mismatchData && selectedModuleOverride) {
+                      handleWorkbookParsed(mismatchData.result, mismatchData.file, selectedModuleOverride);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl text-xs font-extrabold shadow-md hover:shadow-amber-500/20 transition cursor-pointer"
+                >
+                  <span>Confirm & Proceed</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+          )}
+
+          {step === 'upload' && !importing && !mismatchData && (
+            <FileUploader onWorkbookParsed={handleWorkbookParsed} />
           )}
 
           {step === 'mapping' && activeSheet && activeFile && (

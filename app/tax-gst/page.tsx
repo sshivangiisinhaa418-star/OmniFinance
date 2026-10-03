@@ -36,8 +36,13 @@ export default function TaxGstPage() {
     const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
-    const txns = await getActiveTransactionsForModule('tax', activeId);
-    setTransactions(txns);
+    const [taxTxns, salesTxns, purchasesTxns] = await Promise.all([
+      getActiveTransactionsForModule('tax', activeId),
+      getActiveTransactionsForModule('sales'),
+      getActiveTransactionsForModule('purchases'),
+    ]);
+
+    setTransactions([...taxTxns, ...salesTxns, ...purchasesTxns]);
     setLoading(false);
   };
 

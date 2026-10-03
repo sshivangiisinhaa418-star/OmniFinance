@@ -448,7 +448,15 @@ export const transformSheetToTransactions = (
     // 1. Voucher Number resolution with Forward-Fill
     const voucherNoRaw = getRowVal('voucherNo', 'Vch No.', 'Vch No', 'Voucher No.', 'Voucher No', 'Voucher Number', 'Invoice No', 'Bill No.', 'Document No');
     let resolvedVoucherNo = voucherNoRaw ? String(voucherNoRaw).trim() : '';
+
+    const isNewVoucherHeader = Boolean(resolvedVoucherNo && resolvedVoucherNo !== lastValidVoucherNo);
+
     if (resolvedVoucherNo) {
+      if (isNewVoucherHeader) {
+        lastValidPartyName = '';
+        lastValidGstin = '';
+        lastValidPan = '';
+      }
       lastValidVoucherNo = resolvedVoucherNo;
     } else if (lastValidVoucherNo) {
       resolvedVoucherNo = lastValidVoucherNo;

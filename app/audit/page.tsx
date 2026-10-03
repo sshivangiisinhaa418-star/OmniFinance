@@ -3,8 +3,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getActiveTransactionsForModule } from '@/lib/storage';
 import { FinancialTransaction } from '@/types';
-import { runFinancialAuditScan, AuditHealthSummary } from '@/lib/finance/auditScanner';
+import { AuditHealthSummary, runFinancialAuditScan, AuditIssue } from '@/lib/finance/auditScanner';
 import { AuditHealthCard } from '@/components/dashboard/AuditHealthCard';
+import { ChartCard } from '@/components/dashboard/ChartCard';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Cell,
+  CartesianGrid,
+} from 'recharts';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -19,6 +30,8 @@ import {
   FileSpreadsheet,
   Award,
   Zap,
+  BarChart3,
+  PieChart
 } from 'lucide-react';
 
 export default function AuditCenterPage() {
@@ -74,10 +87,32 @@ export default function AuditCenterPage() {
   const compliantVouchersCount = Math.max(0, totalVouchersScanned - auditSummary.totalIssuesCount);
   const compliancePct = totalVouchersScanned > 0 ? ((compliantVouchersCount / totalVouchersScanned) * 100).toFixed(1) : '100.0';
 
+  const severityChartData = useMemo(() => {
+    const high = auditSummary.issues.filter((i: AuditIssue) => i.severity === 'critical').reduce((acc: number, curr: AuditIssue) => acc + curr.affectedCount, 0);
+    const medium = auditSummary.issues.filter((i: AuditIssue) => i.severity === 'warning').reduce((acc: number, curr: AuditIssue) => acc + curr.affectedCount, 0);
+    const low = auditSummary.issues.filter((i: AuditIssue) => i.severity === 'info').reduce((acc: number, curr: AuditIssue) => acc + curr.affectedCount, 0);
+    const compliant = Math.max(0, totalVouchersScanned - (high + medium + low));
+
+    return [
+      { name: 'Compliant Vouchers', count: compliant, fill: '#10b981' },
+      { name: 'Medium Risk Issues', count: medium, fill: '#f59e0b' },
+      { name: 'High Risk Anomalies', count: high, fill: '#ef4444' },
+    ];
+  }, [auditSummary, totalVouchersScanned]);
+
+  const categoryChartData = useMemo(() => {
+    if (!auditSummary.issues.length) return [];
+    return auditSummary.issues.map((issue: AuditIssue) => ({
+      name: issue.title.length > 20 ? issue.title.substring(0, 18) + '...' : issue.title,
+      impact: issue.totalImpactAmount || 0,
+      count: issue.affectedCount,
+    }));
+  }, [auditSummary]);
+
   const downloadAuditReportCSV = () => {
     if (!auditSummary.issues.length) return;
     const headers = ['Category', 'Severity', 'Title', 'Description', 'Affected Count', 'Impact Amount (INR)', 'Auditor Recommendation'];
-    const rows = auditSummary.issues.map(i => [
+    const rows = auditSummary.issues.map((i: AuditIssue) => [
       `"${i.category}"`,
       `"${i.severity.toUpperCase()}"`,
       `"${i.title.replace(/"/g, '""')}"`,
@@ -86,7 +121,7 @@ export default function AuditCenterPage() {
       i.totalImpactAmount,
       `"${i.recommendation.replace(/"/g, '""')}"`,
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e: (string | number)[]) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -186,6 +221,57 @@ export default function AuditCenterPage() {
           </div>
         </div>
       </div>
+
+      {/* Informative Visual Charts Grid */}
+      {!loading && totalVouchersScanned > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard
+            title="Audit Health & Anomaly Severity Distribution"
+            subtitle="Count of compliant vouchers vs risk flags detected by automated scanner"
+          >
+            <ResponsiveContainer width="100%" height={230}>
+              <BarChart data={severityChartData} margin={{ top: 15, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" opacity={0.5} />
+                <XAxis dataKey="name" stroke="#a8a29e" fontSize={11} tickLine={false} />
+                <YAxis stroke="#a8a29e" fontSize={11} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
+                />
+                <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                  {severityChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard
+            title="Financial Impact by Anomaly Category (₹)"
+            subtitle="Estimated monetary exposure associated with flagged audit items"
+          >
+            {categoryChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={categoryChartData} margin={{ top: 15, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#262626" opacity={0.5} />
+                  <XAxis dataKey="name" stroke="#a8a29e" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#a8a29e" fontSize={11} tickLine={false} tickFormatter={(v: any) => `₹${Number(v).toLocaleString('en-IN')}`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
+                    formatter={(val: any) => `₹${Number(val).toLocaleString('en-IN')}`}
+                  />
+                  <Bar dataKey="impact" fill="#ea580c" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[230px] text-xs font-bold text-emerald-500 gap-2">
+                <CheckCircle2 className="w-5 h-5" />
+                <span>Zero Anomaly Financial Exposure Detected</span>
+              </div>
+            )}
+          </ChartCard>
+        </div>
+      )}
 
       {loading ? (
         <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 space-y-3">

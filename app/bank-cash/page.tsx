@@ -7,6 +7,17 @@ import { calculateKPIs } from '@/lib/finance/calculations';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
+import { ChartCard } from '@/components/dashboard/ChartCard';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Cell,
+  CartesianGrid,
+} from 'recharts';
 import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
 import { Wallet, ArrowUpRight, ArrowDownRight, CheckCircle2, UploadCloud } from 'lucide-react';
 
@@ -89,6 +100,40 @@ export default function BankCashPage() {
             <KpiCard title="Net Cash Position" value={netCash} icon={Wallet} gradientClass="kpi-gradient-blue" iconColor="text-blue-500" />
             <KpiCard title="Reconciliation Status" value="100% Reconciled" isCurrency={false} icon={CheckCircle2} gradientClass="kpi-gradient-purple" iconColor="text-purple-500" />
           </div>
+
+          {/* Simple Informative Treasury Liquidity Flow Chart */}
+          <ChartCard
+            title="Treasury Liquidity & Cash Velocity Breakdown"
+            subtitle="Comparison of total inward receipt velocity vs outward settlement payments"
+          >
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart
+                data={[
+                  { name: 'Total Inward Receipts', amount: kpis.cashInflow, fill: '#10b981' },
+                  { name: 'Total Outward Payments', amount: kpis.cashOutflow, fill: '#ef4444' },
+                  { name: 'Net Treasury Surplus', amount: Math.max(0, netCash), fill: '#3b82f6' },
+                ]}
+                margin={{ top: 15, right: 20, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" opacity={0.5} />
+                <XAxis dataKey="name" stroke="#a8a29e" fontSize={11} tickLine={false} />
+                <YAxis stroke="#a8a29e" fontSize={11} tickLine={false} tickFormatter={(v: any) => `₹${Number(v).toLocaleString('en-IN')}`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
+                  formatter={(val: any) => `₹${Number(val).toLocaleString('en-IN')}`}
+                />
+                <Bar dataKey="amount" radius={[8, 8, 0, 0]}>
+                  {[
+                    { fill: '#10b981' },
+                    { fill: '#ef4444' },
+                    { fill: '#3b82f6' },
+                  ].map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
           <div className="rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/80 glass-panel p-6 shadow-sm">
             <h4 className="text-sm font-bold text-stone-900 dark:text-white mb-4">Treasury Accounts Summary & Dynamic Clearing Position</h4>

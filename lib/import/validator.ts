@@ -3,11 +3,30 @@ export const parseAmount = (val: any): number => {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   const str = String(val).trim();
-  const isNegative = /^\(.*\)$/.test(str) || str.endsWith('-');
-  const cleanStr = str.replace(/[^0-9.]/g, '');
-  const num = parseFloat(cleanStr);
+  if (!str) return 0;
+
+  const isNegative = /^\(.*\)$/.test(str) || str.endsWith('-') || str.startsWith('-');
+
+  let cleaned = str;
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    if (cleaned.indexOf(',') < cleaned.indexOf('.')) {
+      cleaned = cleaned.replace(/,/g, '');
+    } else {
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+    }
+  } else if (cleaned.includes(',')) {
+    const parts = cleaned.split(',');
+    if (parts.length === 2 && parts[1].length === 2) {
+      cleaned = cleaned.replace(',', '.');
+    } else {
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  }
+
+  const cleanNumeric = cleaned.replace(/[^0-9.]/g, '');
+  const num = parseFloat(cleanNumeric);
   if (isNaN(num)) return 0;
-  return isNegative ? -num : num;
+  return isNegative ? -Math.abs(num) : Math.abs(num);
 };
 
 // Clean and parse financial balance amounts taking Dr/Cr into account
@@ -15,10 +34,10 @@ export const parseBalanceAmount = (val: any, isPayable: boolean = false): number
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   const str = String(val).trim();
-  const num = parseFloat(str.replace(/[^0-9.-]/g, ''));
-  if (isNaN(num)) return 0;
-
   const lower = str.toLowerCase();
+  const num = parseAmount(str);
+  if (isNaN(num) || num === 0) return 0;
+
   if (lower.includes('dr')) {
     return isPayable ? -Math.abs(num) : Math.abs(num);
   }

@@ -18,7 +18,8 @@ import {
   LogOut,
   Database,
   X,
-  UploadCloud
+  UploadCloud,
+  RefreshCw
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { downloadSampleTallyExcel } from '@/lib/sampleData/tallyGenerator';
@@ -50,57 +51,14 @@ export const Header: React.FC<HeaderProps> = ({
   const pathname = usePathname();
   const isExecutiveSummaryPage = pathname === '/';
 
-  const DEFAULT_COMPANIES = [
-    'BKM Industries Limited'
-  ];
-
-  const [selectedCompany, setSelectedCompany] = useState<string>('BKM Industries Limited');
-  const [isCompanyOpen, setIsCompanyOpen] = useState(false);
-  const [companies, setCompanies] = useState<string[]>(DEFAULT_COMPANIES);
-  const [newCompanyInput, setNewCompanyInput] = useState('');
-  const [showAddCompany, setShowAddCompany] = useState(false);
+  const selectedCompany = 'BKM Industries Limited';
   const [lastUpdate] = useState<string>('22 Sep 2026, 03:15 PM');
 
-  // Load saved company state on mount and sync with Supabase DB
+  // Hardcode active company in localStorage
   React.useEffect(() => {
-    const savedCompany = localStorage.getItem('omnifinance_selected_company');
-    const savedList = localStorage.getItem('omnifinance_company_list');
-    
-    let localList: string[] = DEFAULT_COMPANIES;
-    if (savedList) {
-      try {
-        const parsed = JSON.parse(savedList);
-        const legacyMock = ['Rajmahal Enterprise Pvt Ltd', 'Burnpur Engineering Works', 'Silvassa Synthetics Ltd', 'Vedic Traders & Logistics', 'Acme Enterprise Pvt Ltd', 'Tally Global Industries', 'Vedic Traders Pvt Ltd'];
-        const filtered = parsed.filter((c: string) => !legacyMock.includes(c));
-        if (Array.isArray(filtered) && filtered.length > 0) {
-          localList = filtered;
-        }
-      } catch (e) {}
-    }
-    
-    setCompanies(localList);
-    if (savedCompany) {
-      setSelectedCompany(savedCompany);
-    }
-
-    // Also fetch DB companies from Supabase
-    getAvailableCompaniesFromDB().then((dbCompanies) => {
-      if (dbCompanies && dbCompanies.length > 0) {
-        setCompanies(prev => {
-          const merged = Array.from(new Set([...prev, ...dbCompanies]));
-          localStorage.setItem('omnifinance_company_list', JSON.stringify(merged));
-          return merged;
-        });
-      }
-    });
+    localStorage.setItem('omnifinance_selected_company', 'BKM Industries Limited');
+    localStorage.setItem('omnifinance_company_list', JSON.stringify(['BKM Industries Limited']));
   }, []);
-
-  // Save selected company to localStorage
-  const handleSelectCompany = (companyName: string) => {
-    setSelectedCompany(companyName);
-    localStorage.setItem('omnifinance_selected_company', companyName);
-    setIsCompanyOpen(false);
-  };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, searchQuery: e.target.value }));
@@ -149,23 +107,6 @@ export const Header: React.FC<HeaderProps> = ({
     setTheme(nextTheme);
   };
 
-  const handleAddCompany = () => {
-    if (newCompanyInput.trim()) {
-      const name = newCompanyInput.trim();
-      let updatedList = companies;
-      if (!companies.includes(name)) {
-        updatedList = [...companies, name];
-        setCompanies(updatedList);
-        localStorage.setItem('omnifinance_company_list', JSON.stringify(updatedList));
-      }
-      setSelectedCompany(name);
-      localStorage.setItem('omnifinance_selected_company', name);
-      setNewCompanyInput('');
-      setShowAddCompany(false);
-      setIsCompanyOpen(false);
-    }
-  };
-
   const [isDatasetHistoryOpen, setIsDatasetHistoryOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
@@ -175,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
         collapsed ? 'left-20' : 'left-64'
       }`}
     >
-      {/* Search & Interactive Company Selector */}
+      {/* Search & Organization Badge */}
       <div className="flex items-center gap-4 flex-1 max-w-xl">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -188,90 +129,15 @@ export const Header: React.FC<HeaderProps> = ({
           />
         </div>
 
-        {/* Interactive Company Selector Dropdown */}
-        <div className="relative hidden lg:block">
-          <button
-            onClick={() => setIsCompanyOpen(!isCompanyOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-950/60 border border-stone-200 dark:border-stone-800 hover:border-orange-500/50 rounded-xl text-xs text-stone-700 dark:text-stone-300 transition cursor-pointer"
-          >
-            <Building className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-            <span className="font-bold truncate max-w-[140px]">{selectedCompany}</span>
-            <ChevronDown className="w-3 h-3 text-stone-400" />
-          </button>
-
-          {isCompanyOpen && (
-            <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-2xl p-2 z-50 space-y-1 animate-fade-in">
-              <div className="text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider px-2.5 py-1">
-                Active Organization
-              </div>
-              {companies.map(comp => (
-                <button
-                  key={comp}
-                  onClick={() => handleSelectCompany(comp)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between transition cursor-pointer ${
-                    selectedCompany === comp
-                      ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
-                      : 'text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                  }`}
-                >
-                  <span className="truncate">{comp}</span>
-                  {selectedCompany === comp && <Check className="w-3.5 h-3.5 text-orange-500" />}
-                </button>
-              ))}
-
-              <div className="border-t border-stone-100 dark:border-stone-800 pt-1 mt-1">
-                {!showAddCompany ? (
-                  <button
-                    onClick={() => setShowAddCompany(true)}
-                    className="w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add New Company</span>
-                  </button>
-                ) : (
-                  <div className="p-1 space-y-2">
-                    <input
-                      type="text"
-                      value={newCompanyInput}
-                      onChange={e => setNewCompanyInput(e.target.value)}
-                      placeholder="Company Name..."
-                      className="w-full px-2 py-1 text-xs bg-stone-100 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-lg text-stone-900 dark:text-white focus:outline-none focus:border-orange-500"
-                    />
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={handleAddCompany}
-                        className="px-2.5 py-1 bg-orange-600 text-white rounded-lg text-[10px] font-bold"
-                      >
-                        Add
-                      </button>
-                      <button
-                        onClick={() => setShowAddCompany(false)}
-                        className="px-2 py-1 text-stone-500 text-[10px]"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+        {/* Hardcoded Organization Badge */}
+        <div className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 bg-stone-100 dark:bg-stone-950/70 border border-stone-200 dark:border-stone-800 rounded-xl text-xs text-stone-900 dark:text-stone-100 font-bold shadow-sm">
+          <Building className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+          <span className="truncate">{selectedCompany}</span>
         </div>
       </div>
 
       {/* Controls & Presets */}
       <div className="flex items-center gap-3">
-        {/* Quick Upload Button (Visible on all pages EXCEPT Executive Summary) */}
-        {!isExecutiveSummaryPage && (
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl shadow-md shadow-orange-600/20 transition cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
-            title="Upload Tally / Excel Data File"
-          >
-            <UploadCloud className="w-4 h-4 text-white shrink-0" />
-            <span className="hidden sm:inline">Upload Excel</span>
-          </button>
-        )}
 
         {/* Dataset History Archive Button */}
         <button

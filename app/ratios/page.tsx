@@ -7,7 +7,9 @@ import { calculateKPIs, calculateRatios } from '@/lib/finance/calculations';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
+import { ChartCard } from '@/components/dashboard/ChartCard';
 import { Percent, ShieldCheck, Clock, TrendingUp, UploadCloud } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
 export default function RatiosPage() {
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
@@ -63,6 +65,34 @@ export default function RatiosPage() {
             <KpiCard title="Days Sales Outstanding (DSO)" value={`${ratios.daysSalesOutstanding} Days`} isCurrency={false} icon={Clock} gradientClass="kpi-gradient-amber" iconColor="text-amber-500" />
             <KpiCard title="Return on Equity (ROE)" value={`${ratios.returnOnEquity}%`} isCurrency={false} icon={TrendingUp} gradientClass="kpi-gradient-purple" iconColor="text-purple-500" />
           </div>
+
+          {/* Informative Ratio Benchmark Comparison Chart */}
+          <ChartCard
+            title="Key Financial Ratios vs Industry Benchmarks"
+            subtitle="Comparison of active financial performance indicators against standard target thresholds"
+          >
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart
+                data={[
+                  { metric: 'Current Ratio (x)', Actual: ratios.currentRatio, Target: 1.5 },
+                  { metric: 'Quick Ratio (x)', Actual: ratios.quickRatio, Target: 1.0 },
+                  { metric: 'Gross Margin (%)', Actual: ratios.grossMarginRatio, Target: 25.0 },
+                  { metric: 'ROE (%)', Actual: ratios.returnOnEquity, Target: 15.0 },
+                ]}
+                margin={{ top: 15, right: 20, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" opacity={0.5} />
+                <XAxis dataKey="metric" stroke="#a8a29e" fontSize={11} tickLine={false} />
+                <YAxis stroke="#a8a29e" fontSize={11} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
+                />
+                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                <Bar dataKey="Actual" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="Target" fill="#10b981" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
           <div className="rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/80 glass-panel p-6 shadow-sm">
             <h4 className="text-sm font-bold text-stone-900 dark:text-white mb-4">Financial Health Ratio Diagnostic Matrix</h4>
