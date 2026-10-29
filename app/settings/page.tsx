@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { clearAllData } from '@/lib/storage';
+import { useCompany } from '@/context/CompanyContext';
 import {
   Settings,
   Building,
@@ -22,21 +23,46 @@ import {
   FileCheck2,
   BadgeCheck,
   Building2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  QrCode,
+  Smartphone,
+  Copy,
+  Check
 } from 'lucide-react';
+import {
+  generateRandomSecret,
+  getOtpAuthUri,
+  getQrCodeImageUrl,
+  verifyTotp,
+  getStoredTotpSecret,
+  saveStoredTotpSecret,
+  removeStoredTotpSecret
+} from '@/lib/auth/totp';
 
 export default function SettingsPage() {
+  const { activeCompany } = useCompany();
+
   // User Profile States
-  const [userEmail, setUserEmail] = useState<string>('cfo@bkmindustries.com');
-  const [userName, setUserName] = useState<string>('Vikramaditya Sharma');
+  const [userEmail, setUserEmail] = useState<string>('cfo@omnifinance.com');
+  const [userName, setUserName] = useState<string>('Executive Officer');
   const [userRole, setUserRole] = useState<'CFO' | 'Auditor' | 'Accountant'>('CFO');
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(true);
 
+  // Two-Factor Authentication (Admin Vault) States
+  const [totpPaired, setTotpPaired] = useState(false);
+  const [showTotpModal, setShowTotpModal] = useState(false);
+  const [totpSecret, setTotpSecret] = useState('');
+  const [totpQrUrl, setTotpQrUrl] = useState('');
+  const [totpConfirmCode, setTotpConfirmCode] = useState('');
+  const [verifyingTotp, setVerifyingTotp] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [totpMessage, setTotpMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Organization Profile States
-  const [companyName, setCompanyName] = useState<string>('BKM Industries Limited');
-  const [gstin, setGstin] = useState<string>('19AAACB4581B1ZM');
-  const [corporateAddress, setCorporateAddress] = useState<string>('BKM Tower, 4th Floor, Kolkata, West Bengal 700001');
-  const [taxJurisdiction, setTaxJurisdiction] = useState<string>('West Bengal & Silvassa (D&NH)');
+  const [companyName, setCompanyName] = useState<string>(activeCompany?.name || 'BKM');
+  const [gstin, setGstin] = useState<string>('');
+  const [corporateAddress, setCorporateAddress] = useState<string>('');
+  const [taxJurisdiction, setTaxJurisdiction] = useState<string>('');
 
   // Financial Preference States
   const [currency, setCurrency] = useState<string>('INR');
@@ -95,10 +121,72 @@ export default function SettingsPage() {
 
       const savedRows = localStorage.getItem('omnifinance_rows_per_page');
       if (savedRows) setDefaultRowsPerPage(Number(savedRows));
+
+      // 4. Check if 2FA is active
+      const activeEmail = (userEmail || 'cfo@omnifinance.com').trim().toLowerCase();
+      if (getStoredTotpSecret(activeEmail)) {
+        setTotpPaired(true);
+      }
     };
 
     loadSessionData();
-  }, []);
+  }, [userEmail]);
+
+  // Open Master 2FA Pairing Modal
+  const handleOpenTotpModal = () => {
+    const emailToUse = userEmail.trim().toLowerCase() || 'cfo@omnifinance.com';
+    let secret = getStoredTotpSecret(emailToUse);
+    if (!secret) {
+      secret = generateRandomSecret(16);
+    }
+    setTotpSecret(secret);
+    const uri = getOtpAuthUri(emailToUse, secret, 'OmniFinance');
+    setTotpQrUrl(getQrCodeImageUrl(uri));
+    setTotpConfirmCode('');
+    setCopiedSecret(false);
+    setShowTotpModal(true);
+  };
+
+  const handleCopySecret = () => {
+    if (!totpSecret) return;
+    navigator.clipboard.writeText(totpSecret);
+    setCopiedSecret(true);
+    setTimeout(() => setCopiedSecret(false), 2000);
+  };
+
+  const handleVerifyAndSaveTotp = async () => {
+    if (!totpSecret || totpConfirmCode.length !== 6) return;
+    setVerifyingTotp(true);
+    try {
+      const isValid = await verifyTotp(totpSecret, totpConfirmCode);
+      if (isValid) {
+        const emailToUse = userEmail.trim().toLowerCase() || 'cfo@omnifinance.com';
+        saveStoredTotpSecret(emailToUse, totpSecret);
+        setTotpPaired(true);
+        setShowTotpModal(false);
+        setTotpMessage({
+          type: 'success',
+          text: '✅ Google / Microsoft Authenticator paired successfully! 6-digit TOTP is now active for Admin logins.'
+        });
+      } else {
+        alert('Invalid 6-digit code. Please enter the current code showing in your Authenticator app.');
+      }
+    } finally {
+      setVerifyingTotp(false);
+    }
+  };
+
+  const handleUnpairTotp = () => {
+    if (confirm('Are you sure you want to unpair your Authenticator app? You will need to pair a phone again to use 2FA.')) {
+      const emailToUse = userEmail.trim().toLowerCase() || 'cfo@omnifinance.com';
+      removeStoredTotpSecret(emailToUse);
+      setTotpPaired(false);
+      setTotpMessage({
+        type: 'success',
+        text: 'Authenticator app unpaired. 2FA has been reset.'
+      });
+    }
+  };
 
   // Save Settings Handler
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -316,6 +404,85 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Master Two-Factor Authentication (Admin Vault) - Only visible to CFO / Main Admin */}
+        {userRole === 'CFO' && (
+          <div className="rounded-2xl border border-orange-500/30 bg-orange-950/10 dark:bg-stone-900/90 p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-orange-500/20 pb-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-stone-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-orange-500" />
+                  <span>Master Two-Factor Authentication (Admin Vault)</span>
+                </h3>
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+                  Secures executive financial dashboards. Only visible to CFO / Main Admin accounts.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {totpPaired ? (
+                  <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Authenticator Active</span>
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Not Paired Yet</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {totpMessage && (
+              <div
+                className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                  totpMessage.type === 'success'
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+                }`}
+              >
+                {totpMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <AlertCircle className="w-4 h-4" />
+                )}
+                <span>{totpMessage.text}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-1">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-stone-400 tracking-wider">
+                  Device Compatibility
+                </span>
+                <p className="text-stone-300 font-medium">
+                  Google Authenticator, Microsoft Authenticator, Authy, Apple Passwords
+                </p>
+              </div>
+              <div className="flex items-center sm:justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenTotpModal}
+                  className="px-4 py-2.5 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>{totpPaired ? 'View / Re-Pair QR Code' : '📲 Pair Authenticator Phone'}</span>
+                </button>
+                {totpPaired && (
+                  <button
+                    type="button"
+                    onClick={handleUnpairTotp}
+                    className="px-3 py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                    title="Unpair authenticator app"
+                  >
+                    Reset 2FA
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 2. Corporate Organization Profile */}
         <div className="rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/80 p-6 shadow-sm space-y-5">
           <div className="border-b border-stone-100 dark:border-stone-800 pb-3">
@@ -350,7 +517,7 @@ export default function SettingsPage() {
                 type="text"
                 value={gstin}
                 onChange={e => setGstin(e.target.value)}
-                placeholder="e.g. 19AAACB4581B1ZM"
+                placeholder="Enter GSTIN (optional)"
                 className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl px-3 py-2.5 text-stone-900 dark:text-white font-mono font-bold focus:outline-none focus:border-orange-500 transition"
               />
             </div>
@@ -363,7 +530,7 @@ export default function SettingsPage() {
                 type="text"
                 value={corporateAddress}
                 onChange={e => setCorporateAddress(e.target.value)}
-                placeholder="e.g. BKM Tower, 4th Floor, Kolkata, West Bengal"
+                placeholder="Enter Registered Office Address"
                 className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-xl px-3 py-2.5 text-stone-900 dark:text-white font-semibold focus:outline-none focus:border-orange-500 transition"
               />
             </div>
@@ -465,6 +632,100 @@ export default function SettingsPage() {
           <span>Clear All Imported Financial Data</span>
         </button>
       </div>
+
+      {/* Master 2FA Authenticator Pairing Modal (Admin Only) */}
+      {showTotpModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="w-full max-w-md bg-stone-900 border border-stone-800 rounded-3xl p-6 shadow-2xl space-y-4 text-white relative">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setShowTotpModal(false)}
+              className="absolute top-4 right-4 text-stone-400 hover:text-white w-8 h-8 rounded-full hover:bg-stone-800 transition flex items-center justify-center text-sm cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="text-center space-y-1">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 text-white shadow-lg mx-auto">
+                <QrCode className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Pair Admin Authenticator</h3>
+              <p className="text-xs text-stone-400">
+                Scan this QR code using <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong> on your phone.
+              </p>
+            </div>
+
+            {/* QR Code Container */}
+            <div className="p-3 bg-white rounded-2xl flex items-center justify-center w-fit mx-auto shadow-inner">
+              {totpQrUrl ? (
+                <img
+                  src={totpQrUrl}
+                  alt="OmniFinance Authenticator QR Code"
+                  className="w-48 h-48 block"
+                />
+              ) : (
+                <div className="w-48 h-48 flex items-center justify-center text-stone-800 text-xs">
+                  Generating QR Code...
+                </div>
+              )}
+            </div>
+
+            {/* Secret Key Display */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-stone-400">
+                <span>Manual Setup Key (if camera can&apos;t scan):</span>
+                <button
+                  type="button"
+                  onClick={handleCopySecret}
+                  className="text-orange-400 hover:text-orange-300 font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedSecret ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedSecret ? 'Copied!' : 'Copy'}</span>
+                </button>
+              </div>
+              <div className="font-mono text-xs text-orange-300 bg-stone-950 px-3 py-2 rounded-xl border border-stone-800 text-center tracking-widest break-all select-all">
+                {totpSecret}
+              </div>
+            </div>
+
+            {/* Confirm Code Input */}
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="block text-[11px] font-bold text-stone-300 uppercase tracking-wider mb-1">
+                  Enter the 6-digit code showing on your phone:
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="e.g. 123456"
+                  value={totpConfirmCode}
+                  onChange={(e) => setTotpConfirmCode(e.target.value.replace(/\s+/g, ''))}
+                  className="w-full px-4 py-2.5 text-center text-sm font-mono tracking-widest bg-stone-950 border border-stone-800 rounded-xl text-white focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTotpModal(false)}
+                  className="w-1/3 py-2.5 px-4 bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleVerifyAndSaveTotp}
+                  disabled={totpConfirmCode.length !== 6 || verifyingTotp}
+                  className="w-2/3 py-2.5 px-4 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-bold text-xs rounded-xl shadow-lg transition disabled:opacity-50 cursor-pointer"
+                >
+                  {verifyingTotp ? 'Verifying...' : 'Confirm & Save Pairing'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

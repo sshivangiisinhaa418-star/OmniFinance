@@ -10,6 +10,7 @@ import { FileUploader } from './FileUploader';
 import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw, Building } from 'lucide-react';
 
 import { calculateFileHash, checkDuplicateFileHash, uploadOriginalExcelToStorage, getStoredUserEmail } from '@/lib/datasets/datasetService';
+import { useCompany } from '@/context/CompanyContext';
 
 interface QuickUploadModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
   onImportSuccess,
   pageTitle = 'Current Report Page',
 }) => {
+  const { activeCompany } = useCompany();
   const [step, setStep] = useState<'upload' | 'mapping' | 'success'>('upload');
   const [activeFile, setActiveFile] = useState<File | null>(null);
   const [parsedResult, setParsedResult] = useState<ParsedWorkbookResult | null>(null);
@@ -42,7 +44,7 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     result: ParsedWorkbookResult;
   } | null>(null);
 
-  const targetCompany = 'BKM Industries Limited';
+  const targetCompany = activeCompany.name;
 
   if (!isOpen) return null;
 
@@ -108,16 +110,16 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
       const importId = 'imp_' + Math.random().toString(36).substring(2, 9);
       const snapshotId = `snap_${datasetType}_${new Date().toISOString().replace(/[^0-9]/g, '').substring(0, 14)}`;
 
-      // 1. Calculate file SHA-256 hash & check duplicate
+      // 1. Calculate file SHA-256 hash & check duplicate in this company's DB
       const fileHash = await calculateFileHash(file);
       setProgress(30);
-      setProgressStatus('Checking Duplicate Hashes...');
+      setProgressStatus(`Checking Duplicate Hashes in ${activeCompany.name}...`);
 
       if (fileHash) {
-        const duplicate = await checkDuplicateFileHash(fileHash, datasetType);
+        const duplicate = await checkDuplicateFileHash(fileHash, datasetType, activeCompany.id as any);
         if (duplicate) {
           const confirmProceed = window.confirm(
-            `Notice: This exact Excel file "${file.name}" was already uploaded on ${new Date(duplicate.uploadedAt).toLocaleDateString()} by ${duplicate.uploadedBy}.\n\nDo you want to upload it again as a new version dataset?`
+            `Notice: This exact Excel file "${file.name}" was already uploaded in ${activeCompany.name} on ${new Date(duplicate.uploadedAt).toLocaleDateString()} by ${duplicate.uploadedBy}.\n\nDo you want to upload it again as a new version dataset?`
           );
           if (!confirmProceed) {
             setImporting(false);
@@ -127,10 +129,10 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
         }
       }
 
-      // 2. Upload raw Excel file to private Supabase Storage bucket 'finance-excel'
+      // 2. Upload raw Excel file to private Supabase Storage bucket 'finance-excel' in active company's project
       setProgress(50);
-      setProgressStatus('Uploading to Storage Bucket...');
-      const storageResult = await uploadOriginalExcelToStorage(file, datasetType, snapshotId);
+      setProgressStatus(`Uploading to ${activeCompany.name} Storage Bucket...`);
+      const storageResult = await uploadOriginalExcelToStorage(file, datasetType, snapshotId, activeCompany.id as any);
 
       // 3. Build mappings using auto-mapped column target fields
       setProgress(70);
@@ -193,8 +195,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
       };
 
       setProgress(88);
-      setProgressStatus(`Inserting ${transformedTxns.length} Records to Database...`);
-      await saveSnapshotWithTransactions(newSnapshot, transformedTxns);
+      setProgressStatus(`Inserting ${transformedTxns.length} Records to ${activeCompany.name} Database...`);
+      await saveSnapshotWithTransactions(newSnapshot, transformedTxns, activeCompany.id as any);
 
       setProgress(100);
       setProgressStatus('Upload & Database Sync Complete!');
@@ -228,9 +230,15 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
               <UploadCloud className="w-5 h-5 text-orange-600 dark:text-orange-500" />
               <span>15-Day Snapshot Upload for {pageTitle}</span>
             </h3>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-              Target Module: <span className="font-bold text-orange-600 dark:text-orange-400 uppercase">{defaultDatasetType}</span> (Updates ONLY this module)
-            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="text-xs text-stone-500 dark:text-stone-400">
+                Target Module: <span className="font-bold text-orange-600 dark:text-orange-400 uppercase">{defaultDatasetType}</span>
+              </span>
+              <span className="text-stone-400 dark:text-stone-600">·</span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase font-mono border ${activeCompany.badgeBg} ${activeCompany.badgeBorder} ${activeCompany.badgeText}`}>
+                Target Entity: {activeCompany.code} ({activeCompany.name})
+              </span>
+            </div>
           </div>
 
           <button

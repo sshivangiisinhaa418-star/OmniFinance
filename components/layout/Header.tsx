@@ -8,26 +8,25 @@ import {
   Calendar,
   Filter,
   Download,
-  Building,
   CheckCircle,
   Sun,
   Moon,
   ChevronDown,
-  Check,
   Plus,
   LogOut,
   Database,
   X,
   UploadCloud,
-  RefreshCw
+  RefreshCw,
+  Globe,
+  Building2
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { downloadSampleTallyExcel } from '@/lib/sampleData/tallyGenerator';
 import { DatasetHistoryModal } from '@/components/datasets/DatasetHistoryModal';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import pkg from '@/package.json';
-
-import { getAvailableCompaniesFromDB } from '@/lib/storage';
+import { useCompany } from '@/context/CompanyContext';
 
 interface HeaderProps {
   filters: GlobalFilterState;
@@ -49,16 +48,9 @@ export const Header: React.FC<HeaderProps> = ({
   setTheme,
 }) => {
   const pathname = usePathname();
-  const isExecutiveSummaryPage = pathname === '/';
-
-  const selectedCompany = 'BKM Industries Limited';
+  const { activeCompany, companies, switchCompany, returnToGateway } = useCompany();
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
   const [lastUpdate] = useState<string>('22 Sep 2026, 03:15 PM');
-
-  // Hardcode active company in localStorage
-  React.useEffect(() => {
-    localStorage.setItem('omnifinance_selected_company', 'BKM Industries Limited');
-    localStorage.setItem('omnifinance_company_list', JSON.stringify(['BKM Industries Limited']));
-  }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, searchQuery: e.target.value }));
@@ -116,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
         collapsed ? 'left-20' : 'left-64'
       }`}
     >
-      {/* Search & Organization Badge */}
+      {/* Search & Organization Switcher */}
       <div className="flex items-center gap-4 flex-1 max-w-xl">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -129,10 +121,71 @@ export const Header: React.FC<HeaderProps> = ({
           />
         </div>
 
-        {/* Hardcoded Organization Badge */}
-        <div className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 bg-stone-100 dark:bg-stone-950/70 border border-stone-200 dark:border-stone-800 rounded-xl text-xs text-stone-900 dark:text-stone-100 font-bold shadow-sm">
-          <Building className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-          <span className="truncate">{selectedCompany}</span>
+        {/* Interactive Corporate Entity Switcher */}
+        <div className="relative">
+          <button
+            onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 dark:bg-stone-950/80 dark:hover:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl text-xs text-stone-900 dark:text-stone-100 font-bold shadow-sm transition cursor-pointer select-none"
+            title="Click to Switch Corporate Entity Workspace"
+          >
+            <span className={`w-2.5 h-2.5 rounded-full ${
+              activeCompany.id === 'ssl' ? 'bg-emerald-400 shadow-sm shadow-emerald-400' :
+              activeCompany.id === 'avl' ? 'bg-violet-400 shadow-sm shadow-violet-400' :
+              'bg-amber-400 shadow-sm shadow-amber-400'
+            }`} />
+            <span className="truncate max-w-[120px] sm:max-w-[160px] font-black">{activeCompany.name}</span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-black font-mono border ${activeCompany.badgeBg} ${activeCompany.badgeBorder} ${activeCompany.badgeText}`}>
+              {activeCompany.code}
+            </span>
+            <ChevronDown className={`w-3.5 h-3.5 text-stone-400 transition-transform ${isCompanyDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isCompanyDropdownOpen && (
+            <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-2xl p-2 z-50 space-y-1 animate-fade-in">
+              <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-stone-400 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+                <span>Select Company Workspace</span>
+              </div>
+              {companies.map(comp => {
+                const isCurrent = comp.id === activeCompany.id;
+                return (
+                  <button
+                    key={comp.id}
+                    onClick={() => {
+                      setIsCompanyDropdownOpen(false);
+                      switchCompany(comp.id);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      isCurrent
+                        ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20'
+                        : 'text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        comp.id === 'ssl' ? 'bg-emerald-400' : comp.id === 'avl' ? 'bg-violet-400' : 'bg-amber-400'
+                      }`} />
+                      <span className="truncate font-black">{comp.name}</span>
+                    </div>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono border ${comp.badgeBg} ${comp.badgeBorder} ${comp.badgeText}`}>
+                      {comp.code}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="pt-1 mt-1 border-t border-stone-100 dark:border-stone-800">
+                <button
+                  onClick={() => {
+                    setIsCompanyDropdownOpen(false);
+                    returnToGateway();
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-[11px] font-bold text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-white rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Return to Company Gateway</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

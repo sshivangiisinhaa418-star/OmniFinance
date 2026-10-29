@@ -9,6 +9,7 @@ import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
+import { useCompany } from '@/context/CompanyContext';
 import { Layers, ArrowUpRight, ArrowDownRight, Wallet, UploadCloud } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -22,6 +23,7 @@ import {
 } from 'recharts';
 
 export default function CashFlowPage() {
+  const { activeCompany } = useCompany();
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [dateFilteredTxns, setDateFilteredTxns] = useState<FinancialTransaction[] | null>(null);
   const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
@@ -31,10 +33,10 @@ export default function CashFlowPage() {
 
   const fetchTransactions = async () => {
     const [payments, receipts, sales, purchases] = await Promise.all([
-      getActiveTransactionsForModule('payments'),
-      getActiveTransactionsForModule('receipts'),
-      getActiveTransactionsForModule('sales'),
-      getActiveTransactionsForModule('purchases'),
+      getActiveTransactionsForModule('payments', null, activeCompany.id),
+      getActiveTransactionsForModule('receipts', null, activeCompany.id),
+      getActiveTransactionsForModule('sales', null, activeCompany.id),
+      getActiveTransactionsForModule('purchases', null, activeCompany.id),
     ]);
     setTransactions([...receipts, ...payments, ...sales, ...purchases]);
     setLoading(false);
@@ -42,7 +44,7 @@ export default function CashFlowPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  }, [activeCompany.id]);
 
   const activeTxns = dateFilteredTxns ?? transactions;
   const kpis = calculateKPIs(activeTxns);

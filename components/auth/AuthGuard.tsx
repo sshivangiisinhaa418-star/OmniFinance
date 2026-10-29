@@ -14,17 +14,7 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
   const isPublicRoute = pathname === '/login' || pathname === '/auth/callback';
 
   const checkHasValidSession = async (): Promise<boolean> => {
-    // 1. Check Supabase session first
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) return true;
-      } catch (err) {
-        console.error('Session verification error:', err);
-      }
-    }
-
-    // 2. Check local fallback session
+    // 1. Check local session first (instant 0ms, prevents network blocking)
     if (typeof window !== 'undefined') {
       const localSession = localStorage.getItem('tally_user_session');
       if (localSession) {
@@ -34,6 +24,16 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
         } catch (e) {
           localStorage.removeItem('tally_user_session');
         }
+      }
+    }
+
+    // 2. Check Supabase session as fallback
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) return true;
+      } catch (err) {
+        console.error('Session verification error:', err);
       }
     }
 

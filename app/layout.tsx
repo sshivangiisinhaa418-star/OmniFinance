@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/Header';
 import { GlobalFiltersModal } from '@/components/layout/GlobalFiltersModal';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { FilterProvider, useFilter } from '@/context/FilterContext';
+import { CompanyProvider, useCompany } from '@/context/CompanyContext';
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -17,6 +18,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { filters, setFilters } = useFilter();
 
   const isLoginPage = pathname === '/login';
+  const isGatewayPage = pathname === '/' || pathname === '/gateway';
 
   useEffect(() => {
     const root = document.documentElement;
@@ -29,13 +31,13 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthGuard>
-      {isLoginPage ? (
-        // Dedicated standalone login layout (no sidebar, no header, no search bars)
-        <main className="min-h-screen w-full bg-stone-950 flex flex-col justify-center items-center">
+      {isLoginPage || isGatewayPage ? (
+        // Dedicated standalone full-screen layout for Login & Multi-Entity Gateway Hub
+        <main className="min-h-screen w-full bg-stone-950">
           {children}
         </main>
       ) : (
-        // Protected application layout
+        // Protected enterprise workspace layout with Sidebar and Header
         <div className="flex min-h-screen">
           <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
 
@@ -81,9 +83,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 min-h-screen font-sans antialiased selection:bg-orange-600 selection:text-white transition-colors duration-200">
-        <FilterProvider>
-          <AppLayoutContent>{children}</AppLayoutContent>
-        </FilterProvider>
+        <CompanyProvider>
+          <FilterProvider>
+            <AppLayoutContent>{children}</AppLayoutContent>
+          </FilterProvider>
+        </CompanyProvider>
       </body>
     </html>
   );

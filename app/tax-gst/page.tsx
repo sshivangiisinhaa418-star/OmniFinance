@@ -9,6 +9,7 @@ import { ChartCard } from '@/components/dashboard/ChartCard';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import { SnapshotSelector } from '@/components/dashboard/SnapshotSelector';
+import { useCompany } from '@/context/CompanyContext';
 import { FileCheck2, ShieldCheck, DollarSign, ArrowUpRight, ArrowDownRight, UploadCloud } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -22,6 +23,7 @@ import {
 } from 'recharts';
 
 export default function TaxGstPage() {
+  const { activeCompany } = useCompany();
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>('all');
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
@@ -30,16 +32,16 @@ export default function TaxGstPage() {
 
   const loadData = async (targetSnapshotId?: string | 'all') => {
     setLoading(true);
-    const snaps = await getSnapshotsForModule('tax');
+    const snaps = await getSnapshotsForModule('tax', true, activeCompany.id);
     setSnapshots(snaps);
 
     const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
     const [taxTxns, salesTxns, purchasesTxns] = await Promise.all([
-      getActiveTransactionsForModule('tax', activeId),
-      getActiveTransactionsForModule('sales'),
-      getActiveTransactionsForModule('purchases'),
+      getActiveTransactionsForModule('tax', activeId, activeCompany.id),
+      getActiveTransactionsForModule('sales', null, activeCompany.id),
+      getActiveTransactionsForModule('purchases', null, activeCompany.id),
     ]);
 
     setTransactions([...taxTxns, ...salesTxns, ...purchasesTxns]);
@@ -48,7 +50,7 @@ export default function TaxGstPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeCompany.id]);
 
   const handleSelectSnapshot = (snap: FinancialSnapshot | 'all') => {
     const targetId = typeof snap === 'string' ? snap : snap.id;

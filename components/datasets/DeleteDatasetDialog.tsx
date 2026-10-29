@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { FinancialSnapshot } from '@/types';
 import { deleteSnapshotPermanently, getStoredUserRole } from '@/lib/datasets/datasetService';
+import { useCompany } from '@/context/CompanyContext';
 import { AlertTriangle, Trash2, X, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 interface DeleteDatasetDialogProps {
@@ -18,6 +19,7 @@ export const DeleteDatasetDialog: React.FC<DeleteDatasetDialogProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { activeCompany } = useCompany();
   const [confirmInput, setConfirmInput] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export const DeleteDatasetDialog: React.FC<DeleteDatasetDialogProps> = ({
     setErrorMsg(null);
 
     try {
-      await deleteSnapshotPermanently(snapshot);
+      await deleteSnapshotPermanently(snapshot, activeCompany.id as any);
       setDeleting(false);
       setConfirmInput('');
       onSuccess();

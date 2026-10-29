@@ -16,9 +16,38 @@ CREATE TABLE IF NOT EXISTS public.snapshots (
     grand_total_opening NUMERIC DEFAULT 0,
     grand_total_debit NUMERIC DEFAULT 0,
     grand_total_credit NUMERIC DEFAULT 0,
-    grand_total_closing NUMERIC DEFAULT 0,
-    status TEXT DEFAULT 'active'
+    status TEXT DEFAULT 'active',
+    storage_bucket TEXT,
+    storage_path TEXT,
+    file_hash TEXT,
+    archived_at TIMESTAMP WITH TIME ZONE,
+    archived_by TEXT
 );
+
+ALTER TABLE public.snapshots ADD COLUMN IF NOT EXISTS storage_bucket TEXT;
+ALTER TABLE public.snapshots ADD COLUMN IF NOT EXISTS storage_path TEXT;
+ALTER TABLE public.snapshots ADD COLUMN IF NOT EXISTS file_hash TEXT;
+ALTER TABLE public.snapshots ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.snapshots ADD COLUMN IF NOT EXISTS archived_by TEXT;
+
+-- Audit Logs Table
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    actor_id UUID,
+    actor_email TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT DEFAULT 'snapshot',
+    entity_id TEXT,
+    module TEXT,
+    file_name TEXT,
+    details TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all audit_logs" ON public.audit_logs;
+CREATE POLICY "Allow all audit_logs" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
 
 -- 2. SALES TRANSACTIONS TABLE (With all exact Tally Sales export columns)
 DROP TABLE IF EXISTS public.sales_transactions CASCADE;

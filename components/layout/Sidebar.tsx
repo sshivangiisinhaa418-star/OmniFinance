@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 
 import pkg from '@/package.json';
+import { useCompany } from '@/context/CompanyContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -44,6 +45,8 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
   const pathname = usePathname();
+  const { activeCompany, activeCompanyId, getCompanyRoute, returnToGateway } = useCompany();
+
   const menuItems = [
     { label: 'Executive Summary', href: '/', icon: LayoutDashboard, badge: 'Summary' },
     { label: 'AI Audit Center', href: '/audit', icon: ShieldCheck, badge: 'Audit' },
@@ -65,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
     >
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-stone-200 dark:border-stone-800 bg-stone-50/80 dark:bg-stone-950/70">
-        <Link href="/" className="flex items-center gap-3 overflow-hidden">
+        <Link href={getCompanyRoute('/')} className="flex items-center gap-3 overflow-hidden">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-600 via-amber-500 to-amber-400 flex items-center justify-center shrink-0 shadow-lg shadow-orange-600/30">
             <Flame className="w-5 h-5 text-white" />
           </div>
@@ -73,12 +76,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
             <div className="flex flex-col">
               <span className="font-black text-stone-900 dark:text-white text-base tracking-wide leading-tight flex items-center gap-1.5">
                 Omni<span className="text-orange-600 dark:text-orange-500 font-extrabold">Finance</span>
-                <span className="px-1.5 py-0.5 text-[10px] font-black text-white bg-gradient-to-r from-orange-600 to-amber-600 rounded-md shadow-sm border border-orange-400/30 shrink-0">
-                  v{pkg.version}
+                <span className={`px-1.5 py-0.5 text-[9px] font-black uppercase font-mono rounded-md border ${activeCompany.badgeBg} ${activeCompany.badgeBorder} ${activeCompany.badgeText} shrink-0`}>
+                  {activeCompany.code}
                 </span>
               </span>
-              <span className="text-[10px] text-orange-600 dark:text-amber-500 uppercase tracking-widest font-extrabold">
-                Executive Suite
+              <span className="text-[10px] text-stone-400 uppercase tracking-widest font-extrabold truncate max-w-[150px]">
+                {activeCompany.name.split(' ')[0]} Suite
               </span>
             </div>
           )}
@@ -95,17 +98,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
       {/* Navigation Menu */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
         <div className="px-3 pb-2 text-[10px] font-black uppercase tracking-wider text-stone-400 dark:text-stone-500">
-          {!collapsed ? 'Core Financial Modules' : 'Menu'}
+          {!collapsed ? `Core Modules (${activeCompany.code})` : 'Menu'}
         </div>
 
         {menuItems.map(item => {
           const ItemIcon = item.icon;
-          const isActive = pathname === item.href;
+          const itemHref = getCompanyRoute(item.href);
+          const isActive = pathname === itemHref || pathname === item.href;
 
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={itemHref}
               className={`flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all group ${
                 isActive
                   ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-lg shadow-orange-600/30 font-extrabold'
@@ -135,6 +139,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
             </Link>
           );
         })}
+      </div>
+
+      {/* Switch Corporate Entity / Gateway Hub Button */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={returnToGateway}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition border border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-900 cursor-pointer ${
+            collapsed ? 'justify-center px-0' : ''
+          }`}
+          title="Switch Corporate Entity (Return to Gateway Hub)"
+        >
+          <Building2 className="w-4 h-4 text-orange-500 shrink-0" />
+          {!collapsed && (
+            <span className="truncate">Switch Company</span>
+          )}
+        </button>
       </div>
 
       {/* User Footer */}

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { FinancialSnapshot, DatasetType } from '@/types';
 import { getSnapshotsForModule } from '@/lib/storage';
+import { useCompany } from '@/context/CompanyContext';
 import {
   updateSnapshotStatus,
   getSignedDownloadUrl,
@@ -42,6 +43,7 @@ export const DatasetHistoryModal: React.FC<DatasetHistoryModalProps> = ({
   defaultModule = 'all',
   onDataRefreshed,
 }) => {
+  const { activeCompany } = useCompany();
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedModule, setSelectedModule] = useState<DatasetType | 'all'>(defaultModule);
@@ -72,10 +74,10 @@ export const DatasetHistoryModal: React.FC<DatasetHistoryModalProps> = ({
 
     if (selectedModule === 'all') {
       const modules: DatasetType[] = ['sales', 'purchases', 'receivables', 'payables', 'payments', 'receipts', 'inventory', 'tax'];
-      const results = await Promise.all(modules.map(m => getSnapshotsForModule(m)));
+      const results = await Promise.all(modules.map(m => getSnapshotsForModule(m, activeCompany.id as any)));
       allSnaps = results.flat();
     } else {
-      allSnaps = await getSnapshotsForModule(selectedModule as DatasetType);
+      allSnaps = await getSnapshotsForModule(selectedModule as DatasetType, activeCompany.id as any);
     }
 
     // Sort newest first
@@ -88,7 +90,7 @@ export const DatasetHistoryModal: React.FC<DatasetHistoryModalProps> = ({
     if (isOpen) {
       fetchSnapshots();
     }
-  }, [isOpen, selectedModule]);
+  }, [isOpen, selectedModule, activeCompany.id]);
 
   if (!isOpen) return null;
 
@@ -99,7 +101,7 @@ export const DatasetHistoryModal: React.FC<DatasetHistoryModalProps> = ({
 
   const handleStatusToggle = async (snap: FinancialSnapshot, targetStatus: 'active' | 'inactive' | 'archived') => {
     try {
-      await updateSnapshotStatus(snap.id, targetStatus, { fileName: snap.fileName, module: snap.module });
+      await updateSnapshotStatus(snap.id, targetStatus, { fileName: snap.fileName, module: snap.module }, activeCompany.id as any);
       showToast(
         targetStatus === 'inactive'
           ? `Dataset "${snap.fileName}" hidden. Excluded from active dashboard calculations.`
@@ -121,7 +123,7 @@ export const DatasetHistoryModal: React.FC<DatasetHistoryModalProps> = ({
     }
 
     try {
-      const signedUrl = await getSignedDownloadUrl(snap.storageBucket, snap.storagePath);
+      const signedUrl = await getSignedDownloadUrl(snap.storageBucket, snap.storagePath, activeCompany.id as any);
       if (!signedUrl) {
         alert('Could not generate secure signed URL. Storage link may be unconfigured.');
         return;
@@ -133,7 +135,7 @@ export const DatasetHistoryModal: React.FC<DatasetHistoryModalProps> = ({
         fileName: snap.fileName,
         module: snap.module,
         details: `Downloaded original Excel file "${snap.fileName}" via secure signed URL.`,
-      });
+      }, activeCompany.id as any);
 
       window.open(signedUrl, '_blank');
       showToast(`Downloading original Excel file "${snap.fileName}"...`);

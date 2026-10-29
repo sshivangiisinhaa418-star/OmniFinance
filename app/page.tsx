@@ -1,456 +1,243 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  getLatestSnapshotForModule,
-  getActiveTransactionsForModule,
-} from '@/lib/storage';
-import { FinancialTransaction, FinancialSnapshot } from '@/types';
-import { calculateMonthlyTrends, parseMonthAndYear } from '@/lib/finance/calculations';
-import { runFinancialAuditScan } from '@/lib/finance/auditScanner';
-import { KpiCard } from '@/components/dashboard/KpiCard';
-import { ChartCard } from '@/components/dashboard/ChartCard';
-import { EmptyState } from '@/components/dashboard/EmptyState';
-import { AuditHealthCard } from '@/components/dashboard/AuditHealthCard';
-import {
-  DollarSign,
-  TrendingUp,
-  PieChart as PieIcon,
-  Receipt,
-  Clock,
-  CreditCard,
-  Sparkles,
-  ShoppingBag,
-  Users,
+  Flame,
   Building2,
-  Percent,
-  Activity,
-  ShieldAlert,
-  CheckCircle2,
-  ArrowUpRight,
-  ArrowDownRight,
   Truck,
-  Layers,
-  BarChart3,
+  Cpu,
+  ArrowRight,
+  ShieldCheck,
+  Database,
   Globe,
-  UploadCloud
+  Sparkles,
+  LogOut,
+  Activity,
+  FileSpreadsheet
 } from 'lucide-react';
-import { QuickUploadModal } from '@/components/import/QuickUploadModal';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  BarChart,
-  Bar
-} from 'recharts';
+import { COMPANY_LIST, CompanyConfig } from '@/lib/company/companyConfig';
+import { useCompany } from '@/context/CompanyContext';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import pkg from '@/package.json';
 
-import { DateRangePicker, NoDataInDateRangeCard, normalizeToYYYYMMDD } from '@/components/dashboard/DateRangePicker';
-import { useFilter } from '@/context/FilterContext';
+export default function CompanyGatewayPage() {
+  const router = useRouter();
+  const { switchCompany } = useCompany();
+  const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
+  const [launching, setLaunching] = useState<string | null>(null);
 
-export default function ExecutiveSummaryPage() {
-  const { filters } = useFilter();
-  const [loading, setLoading] = useState(true);
-  const [salesData, setSalesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
-  const [purchasesData, setPurchasesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
-  const [receivablesData, setReceivablesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
-  const [payablesData, setPayablesData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
-  const [paymentsData, setPaymentsData] = useState<{ snap: FinancialSnapshot | null; txns: FinancialTransaction[] }>({ snap: null, txns: [] });
-  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
-  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
-  const [dateFilterActive, setDateFilterActive] = useState<boolean>(false);
+  const handleLaunch = (company: CompanyConfig) => {
+    setLaunching(company.id);
+    switchCompany(company.id);
+  };
 
-  useEffect(() => {
-    if (filters.dateRange.start || filters.dateRange.end) {
-      setSelectedStartDate(filters.dateRange.start || null);
-      setSelectedEndDate(filters.dateRange.end || null);
-      setDateFilterActive(true);
-    } else {
-      setSelectedStartDate(null);
-      setSelectedEndDate(null);
-      setDateFilterActive(false);
+  const handleSignOut = async () => {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch {}
     }
-  }, [filters.dateRange.start, filters.dateRange.end]);
+    localStorage.removeItem('tally_user_session');
+    router.replace('/login');
+  };
 
-  const loadAllModuleSummaries = async () => {
-    setLoading(true);
-
-    try {
-      const [salesSnap, purchasesSnap, receivablesSnap, payablesSnap, paymentsSnap] = await Promise.all([
-        getLatestSnapshotForModule('sales'),
-        getLatestSnapshotForModule('purchases'),
-        getLatestSnapshotForModule('receivables'),
-        getLatestSnapshotForModule('payables'),
-        getLatestSnapshotForModule('payments'),
-      ]);
-
-      const [salesTxns, purchasesTxns, receivablesTxns, payablesTxns, paymentsTxns] = await Promise.all([
-        getActiveTransactionsForModule('sales'),
-        getActiveTransactionsForModule('purchases'),
-        getActiveTransactionsForModule('receivables'),
-        getActiveTransactionsForModule('payables'),
-        getActiveTransactionsForModule('payments'),
-      ]);
-
-      setSalesData({ snap: salesSnap, txns: salesTxns });
-      setPurchasesData({ snap: purchasesSnap, txns: purchasesTxns });
-      setReceivablesData({ snap: receivablesSnap, txns: receivablesTxns });
-      setPayablesData({ snap: payablesSnap, txns: payablesTxns });
-      setPaymentsData({ snap: paymentsSnap, txns: paymentsTxns });
-    } catch (err) {
-      console.error('Failed to load executive master summary:', err);
-    } finally {
-      setLoading(false);
+  const getIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'Truck':
+        return <Truck className="w-8 h-8" />;
+      case 'Cpu':
+        return <Cpu className="w-8 h-8" />;
+      case 'Building2':
+      default:
+        return <Building2 className="w-8 h-8" />;
     }
   };
-
-  useEffect(() => {
-    loadAllModuleSummaries();
-  }, []);
-
-  const filterByDate = (txns: FinancialTransaction[]) => {
-    return txns.filter(t => {
-      if (dateFilterActive && (selectedStartDate || selectedEndDate)) {
-        const d = normalizeToYYYYMMDD(t.date);
-        if (d) {
-          if (selectedStartDate && d < selectedStartDate) return false;
-          if (selectedEndDate && d > selectedEndDate) return false;
-        }
-      }
-      if (filters.searchQuery) {
-        const q = filters.searchQuery.toLowerCase();
-        const p = (t.partyName || '').toLowerCase();
-        const v = (t.voucherNo || '').toLowerCase();
-        const l = (t.ledgerName || '').toLowerCase();
-        if (!p.includes(q) && !v.includes(q) && !l.includes(q)) return false;
-      }
-      return true;
-    });
-  };
-
-  const activeSalesTxns = filterByDate(salesData.txns);
-  const activePurchasesTxns = filterByDate(purchasesData.txns);
-  const activeReceivablesTxns = filterByDate(receivablesData.txns);
-  const activePayablesTxns = filterByDate(payablesData.txns);
-  const activePaymentsTxns = filterByDate(paymentsData.txns);
-
-  // --- 1. CONSOLIDATED SALES SUMMARY ---
-  const totalSales = activeSalesTxns.reduce((s, t) => s + (t.grossTotal || t.saleAmount || t.totalAmount || t.amount || 0), 0);
-  const salesCount = activeSalesTxns.length;
-  const avgSalesInvoice = salesCount > 0 ? totalSales / salesCount : 0;
-
-  // --- 2. CONSOLIDATED PURCHASES SUMMARY ---
-  const totalPurchases = activePurchasesTxns.reduce((s, t) => s + (t.grossTotal || t.totalAmount || t.value || t.amount || 0), 0);
-  const totalIGST = activePurchasesTxns.reduce((s, t) => s + (t.igst || 0), 0);
-  const totalCGST = activePurchasesTxns.reduce((s, t) => s + (t.cgst || 0), 0);
-  const totalSGST = activePurchasesTxns.reduce((s, t) => s + (t.sgst || 0), 0);
-  const totalGSTClaimable = totalIGST + totalCGST + totalSGST;
-  const totalFreight = activePurchasesTxns.reduce((s, t) => s + (t.transportationCharges || 0), 0);
-
-  // --- 3. CONSOLIDATED RECEIVABLES (DEBTORS) SUMMARY ---
-  const recSnap = receivablesData.snap;
-  const totalReceivables = recSnap?.grandTotalClosing ?? activeReceivablesTxns.reduce((s, t) => s + (t.closingBalance || 0), 0);
-  const recDebit = recSnap?.grandTotalDebit ?? activeReceivablesTxns.reduce((s, t) => s + (t.debit || 0), 0);
-  const recCredit = recSnap?.grandTotalCredit ?? activeReceivablesTxns.reduce((s, t) => s + (t.credit || 0), 0);
-  const recBase = (recSnap?.grandTotalOpening || 0) + recDebit;
-  const ceiPct = recBase > 0 ? Math.round((recCredit / recBase) * 100) : 0;
-  const dsoDays = recDebit > 0 ? Math.round((Math.max(0, totalReceivables) / recDebit) * 30) : 0;
-
-  // --- 4. CONSOLIDATED PAYABLES (CREDITORS) SUMMARY ---
-  const paySnap = payablesData.snap;
-  const totalPayables = paySnap?.grandTotalClosing ?? activePayablesTxns.reduce((s, t) => s + (t.closingBalance || 0), 0);
-  const payDebit = paySnap?.grandTotalDebit ?? activePayablesTxns.reduce((s, t) => s + (t.debit || 0), 0);
-  const payCredit = paySnap?.grandTotalCredit ?? activePayablesTxns.reduce((s, t) => s + (t.credit || 0), 0);
-  const payBase = (paySnap?.grandTotalOpening || 0) + payCredit;
-  const psePct = payBase > 0 ? Math.round((payDebit / payBase) * 100) : 0;
-  const dpoDays = payCredit > 0 ? Math.round((Math.max(0, totalPayables) / payCredit) * 30) : 0;
-
-  // --- 5. PROFITABILITY & COGS ACCRUAL CALCULATIONS ---
-  const directGrossProfit = totalSales - totalPurchases;
-  const directGrossMarginPct = totalSales > 0 ? ((totalSales - totalPurchases) / totalSales) * 100 : 0;
-
-  // Accrual COGS: COGS = Purchases - Closing Inventory Valuation
-  // Estimated Closing Stock held in warehouses (approx 78.8% of procurement)
-  const closingStockValuation = totalPurchases * 0.788;
-  const cogs = Math.max(0, totalPurchases - closingStockValuation);
-  const accrualGrossProfit = totalSales - cogs;
-  const accrualCogsMarginPct = totalSales > 0 ? (accrualGrossProfit / totalSales) * 100 : 0;
-
-  // --- 6. MONTHLY CONSOLIDATED TRENDS ---
-  const allTxns = [...activeSalesTxns, ...activePurchasesTxns];
-  const monthlyTrends = calculateMonthlyTrends(allTxns);
-
-  // --- 7. MODULE DISTRIBUTION DONUT CHART ---
-  const moduleDistribution = [
-    { name: 'Sales Revenue', value: totalSales, fill: '#ea580c' },
-    { name: 'Procurement Spend', value: totalPurchases, fill: '#f59e0b' },
-    { name: 'Accounts Receivable', value: Math.abs(totalReceivables), fill: '#10b981' },
-    { name: 'Accounts Payable', value: Math.abs(totalPayables), fill: '#3b82f6' },
-  ];
-
-  const pieColors = ['#ea580c', '#f59e0b', '#10b981', '#3b82f6'];
-
-  const fmtCurrency = (val: number) => {
-    if (val === 0) return '₹0.00';
-    return `₹${Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  const fmtBalance = (val: number, type: 'dr' | 'cr' = 'dr') => {
-    if (val === 0) return `₹0.00 ${type.toUpperCase()}`;
-    const str = Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return val < 0 ? `₹${str} ${type === 'dr' ? 'Cr' : 'Dr'}` : `₹${str} ${type.toUpperCase()}`;
-  };
-
-  const rawMasterTxns = [...salesData.txns, ...purchasesData.txns, ...receivablesData.txns, ...payablesData.txns, ...paymentsData.txns];
-  const activeMasterTxns = [...activeSalesTxns, ...activePurchasesTxns, ...activeReceivablesTxns, ...activePayablesTxns, ...activePaymentsTxns];
-
-  const auditSummary = useMemo(() => {
-    return runFinancialAuditScan({
-      sales: activeSalesTxns,
-      purchases: activePurchasesTxns,
-      receivables: activeReceivablesTxns,
-      payables: activePayablesTxns,
-      payments: activePaymentsTxns,
-    });
-  }, [activeSalesTxns, activePurchasesTxns, activeReceivablesTxns, activePayablesTxns, activePaymentsTxns]);
-
-  const hasAnyData = rawMasterTxns.length > 0;
-  const isDateFilteredEmpty = dateFilterActive && activeMasterTxns.length === 0;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Page Title Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-stone-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Globe className="w-6 h-6 text-orange-600 dark:text-orange-500" />
-            <span>Master Executive Financial Briefing</span>
+    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col justify-between selection:bg-orange-600 selection:text-white">
+      {/* Background Decorative Gradient Orbs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute top-1/3 -right-40 w-96 h-96 bg-violet-600/10 rounded-full blur-3xl animate-pulse delay-700" />
+        <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl animate-pulse delay-1000" />
+      </div>
+
+      {/* TOP COMMAND BAR */}
+      <header className="relative z-10 w-full border-b border-stone-800/80 bg-stone-950/70 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-600 via-amber-500 to-amber-400 flex items-center justify-center shrink-0 shadow-lg shadow-orange-600/30">
+            <Flame className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-black text-white text-base tracking-wide leading-none">
+                Omni<span className="text-orange-500 font-extrabold">Finance</span>
+              </span>
+              <span className="px-1.5 py-0.5 text-[10px] font-black text-white bg-gradient-to-r from-orange-600 to-amber-600 rounded-md border border-orange-400/30">
+                v{pkg.version}
+              </span>
+            </div>
+            <span className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">
+              Multi-Entity Enterprise Hub
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-xs text-stone-300">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="font-semibold">256-bit Encrypted Multi-Tenant Gateway</span>
+          </div>
+
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold rounded-xl border border-rose-500/20 transition cursor-pointer"
+            title="Sign out of financial portal"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Sign Out</span>
+          </button>
+        </div>
+      </header>
+
+      {/* MAIN HERO & ENTITY SELECTION */}
+      <main className="relative z-10 max-w-7xl mx-auto px-6 py-12 flex-1 flex flex-col justify-center w-full">
+        {/* Hero Title */}
+        <div className="text-center max-w-3xl mx-auto mb-12 space-y-4">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-bold uppercase tracking-wider shadow-inner">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Multi-Company Financial Gateway</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+            Select Your Corporate{' '}
+            <span className="bg-gradient-to-r from-orange-400 via-amber-300 to-emerald-400 bg-clip-text text-transparent">
+              Entity Workspace
+            </span>
           </h1>
-          <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            Unified cross-module financial intelligence summarizing Sales, Purchases, Receivables, Payables &amp; Tax ITC
+
+          <p className="text-sm sm:text-base text-stone-400 leading-relaxed">
+            Each company operates on a dedicated, isolated database with independent ledger registers, GST reconciliations, and executive dashboards. Select an organization to launch.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
-          <Activity className="w-4 h-4" />
-          <span>Real-time Enterprise Audit</span>
-        </div>
-      </div>
+        {/* 3 ENTITY CARDS GRID (BKM, AVL, SSL) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
+          {COMPANY_LIST.map((comp) => {
+            const isHovered = selectedEntity === comp.id;
+            const isLaunchingThis = launching === comp.id;
 
-      <DateRangePicker
-        transactions={rawMasterTxns}
-        selectedStartDate={selectedStartDate}
-        selectedEndDate={selectedEndDate}
-        onDateRangeChange={(_, start, end) => {
-          setSelectedStartDate(start);
-          setSelectedEndDate(end);
-          setDateFilterActive(Boolean(start || end));
-        }}
-      />
-
-      {!loading && !hasAnyData ? (
-        <EmptyState
-          title="No Module Data Available for Summary"
-          description="Financial snapshots have not been uploaded yet."
-          showUploadButton={false}
-        />
-      ) : isDateFilteredEmpty ? (
-        <NoDataInDateRangeCard
-          startDate={selectedStartDate}
-          endDate={selectedEndDate}
-          onReset={() => {
-            setSelectedStartDate(null);
-            setSelectedEndDate(null);
-            setDateFilterActive(false);
-          }}
-        />
-      ) : (
-        <>
-          {/* SECTION 1: MASTER CONSOLIDATED KPIS (2 CORE PILLARS: SALES & PROCUREMENT OUTFLOW) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <KpiCard
-              title="Total Sales Revenue"
-              value={totalSales}
-              icon={DollarSign}
-              gradientClass="kpi-gradient-emerald"
-              iconColor="text-emerald-500"
-            />
-            <KpiCard
-              title="Procurement Outflow"
-              value={totalPurchases}
-              icon={ShoppingBag}
-              gradientClass="kpi-gradient-orange"
-              iconColor="text-orange-500"
-            />
-          </div>
-
-          {/* SECTION 2: 4 MODULE SUMMARY CARDS GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Sales & Revenue Card */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-emerald-500" />
-                  <span>Sales &amp; Revenue</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                  {salesCount} Invoices
-                </span>
-              </div>
-              <div>
-                <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                  {fmtCurrency(totalSales)}
-                </div>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1">
-                  Average Order Value: <strong className="text-stone-800 dark:text-stone-200">{fmtCurrency(avgSalesInvoice)}</strong>
-                </p>
-              </div>
-            </div>
-
-            {/* Procurement & Purchases Card */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShoppingBag className="w-4 h-4 text-orange-500" />
-                  <span>Procurement Outflow</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/10 text-orange-600 border border-orange-500/20">
-                  {purchasesData.txns.length} Vouchers
-                </span>
-              </div>
-              <div>
-                <div className="text-2xl font-black text-orange-600 dark:text-orange-400 font-mono">
-                  {fmtCurrency(totalPurchases)}
-                </div>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1">
-                  Freight &amp; Logistics: <strong className="text-stone-800 dark:text-stone-200">{fmtCurrency(totalFreight)}</strong>
-                </p>
-              </div>
-            </div>
-
-            {/* Accounts Receivable Card */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-amber-500" />
-                  <span>Accounts Receivable</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                  CEI: {ceiPct}%
-                </span>
-              </div>
-              <div>
-                <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
-                  {fmtBalance(totalReceivables, 'dr')}
-                </div>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1">
-                  Estimated DSO: <strong className="text-stone-800 dark:text-stone-200">{dsoDays} Days</strong>
-                </p>
-              </div>
-            </div>
-
-            {/* Accounts Payable Card */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <CreditCard className="w-4 h-4 text-blue-500" />
-                  <span>Accounts Payable</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                  PSE: {psePct}%
-                </span>
-              </div>
-              <div>
-                <div className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
-                  {fmtBalance(totalPayables, 'cr')}
-                </div>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1">
-                  Estimated DPO: <strong className="text-stone-800 dark:text-stone-200">{dpoDays} Days</strong>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 3: CHARTS ROW */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Sales vs Procurement Outflow Area Chart */}
-            <div className="lg:col-span-2">
-              <ChartCard
-                title="Consolidated Financial Trajectory"
-                subtitle="🟠 Solid Line = Billed Sales Revenue  |  🟡 Light Line = Procurement Outflow (Purchases)"
+            return (
+              <div
+                key={comp.id}
+                onMouseEnter={() => setSelectedEntity(comp.id)}
+                onMouseLeave={() => setSelectedEntity(null)}
+                className={`relative group rounded-3xl p-8 border transition-all duration-300 flex flex-col justify-between backdrop-blur-xl ${
+                  isHovered
+                    ? `border-stone-700 bg-stone-900/90 shadow-2xl ${comp.glowShadow} -translate-y-1.5`
+                    : 'border-stone-800/80 bg-stone-900/40 hover:border-stone-700/80'
+                }`}
               >
-                <ResponsiveContainer width="100%" height={280}>
-                  <AreaChart data={monthlyTrends}>
-                    <defs>
-                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ea580c" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#ea580c" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorPurchases" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" strokeOpacity={0.5} />
-                    <XAxis dataKey="month" stroke="#78716c" fontSize={11} />
-                    <YAxis stroke="#78716c" fontSize={11} tickFormatter={val => `₹${val / 1000}k`} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }}
-                      itemStyle={{ color: '#ffffff', fontWeight: 700 }}
-                      labelStyle={{ color: '#ffffff', fontWeight: 700 }}
-                      formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, '']}
-                    />
-                    <Legend formatter={(value) => <span className="text-stone-700 dark:text-stone-300 font-bold text-[11px]">{value}</span>} />
-                    <Area type="monotone" dataKey="sales" name="Billed Sales Revenue (Orange Line)" stroke="#ea580c" fillOpacity={1} fill="url(#colorSales)" strokeWidth={3} />
-                    <Area type="monotone" dataKey="purchases" name="Procurement Outflow (Amber Line)" stroke="#f59e0b" fillOpacity={1} fill="url(#colorPurchases)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </ChartCard>
-            </div>
-
-            {/* Consolidated Module Share Donut Chart */}
-            <div>
-              <ChartCard
-                title="Enterprise Value Distribution"
-                subtitle="Percentage share across Revenue, Purchases &amp; Balances"
-              >
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie
-                      data={moduleDistribution}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={4}
-                      dataKey="value"
-                      nameKey="name"
+                <div>
+                  {/* Top Row: Icon & Dedicated DB Status */}
+                  <div className="flex items-center justify-between mb-8">
+                    <div
+                      className={`w-16 h-16 rounded-2xl bg-gradient-to-tr ${comp.gradient} flex items-center justify-center text-white shadow-xl ${comp.glowShadow} transition-transform duration-300 group-hover:scale-105`}
                     >
-                      {moduleDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }}
-                      itemStyle={{ color: '#ffffff', fontWeight: 700 }}
-                      labelStyle={{ color: '#ffffff', fontWeight: 700 }}
-                      formatter={(val: any) => `₹${Number(val).toLocaleString('en-IN')}`}
-                    />
-                    <Legend wrapperStyle={{ paddingTop: '10px' }} formatter={(value) => <span className="text-stone-700 dark:text-stone-300 font-bold text-[11px]">{value}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartCard>
+                      {getIcon(comp.iconName)}
+                    </div>
+
+                    <span className="px-3 py-1.5 rounded-xl text-xs text-emerald-400 font-bold flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span>Dedicated DB</span>
+                    </span>
+                  </div>
+
+                  {/* Clean Company Name: BKM, AVL, SSL */}
+                  <h2 className="text-4xl font-black text-white tracking-tight group-hover:text-orange-400 transition-colors">
+                    {comp.name}
+                  </h2>
+                  <p className="text-xs text-stone-400 font-medium mt-2">
+                    Isolated Financial Database &amp; Ledger Workspace
+                  </p>
+                </div>
+
+                {/* Launch Workspace CTA Button */}
+                <div className="mt-10 pt-6 border-t border-stone-800/80">
+                  <button
+                    onClick={() => handleLaunch(comp)}
+                    disabled={isLaunchingThis}
+                    className={`w-full py-4 px-4 rounded-2xl text-sm font-black tracking-wide flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer shadow-lg ${
+                      comp.id === 'ssl'
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 shadow-emerald-600/30'
+                        : comp.id === 'avl'
+                        ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500 shadow-violet-600/30'
+                        : 'bg-gradient-to-r from-orange-600 to-amber-600 text-white hover:from-orange-500 hover:to-amber-500 shadow-orange-600/30'
+                    }`}
+                  >
+                    {isLaunchingThis ? (
+                      <>
+                        <Activity className="w-4 h-4 animate-spin" />
+                        <span>Connecting to {comp.name} DB...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Launch {comp.name} Workspace</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </>
+                    )}
+                  </button>
+
+                  <div className="mt-3 text-center">
+                    <span className="text-[11px] text-stone-500 font-mono">
+                      URL: /{comp.id}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* BOTTOM ARCHITECTURAL ASSURANCE STRIP */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-stone-800/60">
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-stone-900/40 border border-stone-800/60">
+            <Database className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-black text-white">Physical DB Segregation</h4>
+              <p className="text-[11px] text-stone-400 mt-0.5">
+                Each company connects to independent Supabase database credentials with zero risk of cross-contamination.
+              </p>
             </div>
           </div>
-        </>
-      )}
+
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-stone-900/40 border border-stone-800/60">
+            <Globe className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-black text-white">Isolated URL Namespaces</h4>
+              <p className="text-[11px] text-stone-400 mt-0.5">
+                Every browser tab runs in its own URL scope (<code className="text-orange-400">/bkm</code>, <code className="text-orange-400">/avl</code>, <code className="text-orange-400">/ssl</code>) allowing safe multi-tab work.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-stone-900/40 border border-stone-800/60">
+            <FileSpreadsheet className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-black text-white">Tally Header Validation</h4>
+              <p className="text-[11px] text-stone-400 mt-0.5">
+                Excel parser verifies company headers during upload to prevent uploading one company&apos;s ledger into another.
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* FOOTER */}
+      <footer className="relative z-10 border-t border-stone-800/60 py-4 px-6 text-center text-xs text-stone-500">
+        <span>OmniFinance Executive Multi-Entity Gateway &copy; {new Date().getFullYear()}. All Rights Reserved.</span>
+      </footer>
     </div>
   );
 }

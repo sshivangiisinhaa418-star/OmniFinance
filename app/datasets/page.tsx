@@ -11,6 +11,7 @@ import {
 } from '@/lib/datasets/datasetService';
 import { DeleteDatasetDialog } from '@/components/datasets/DeleteDatasetDialog';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
+import { useCompany } from '@/context/CompanyContext';
 import {
   Database,
   Search,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react';
 
 export default function DatasetsPage() {
+  const { activeCompany } = useCompany();
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedModule, setSelectedModule] = useState<DatasetType | 'all'>('all');
@@ -65,10 +67,10 @@ export default function DatasetsPage() {
     try {
       if (selectedModule === 'all') {
         const modules: DatasetType[] = ['sales', 'purchases', 'receivables', 'payables', 'payments', 'receipts', 'inventory', 'tax'];
-        const results = await Promise.all(modules.map(m => getSnapshotsForModule(m)));
+        const results = await Promise.all(modules.map(m => getSnapshotsForModule(m, true, activeCompany.id)));
         allSnaps = results.flat();
       } else {
-        allSnaps = await getSnapshotsForModule(selectedModule as DatasetType);
+        allSnaps = await getSnapshotsForModule(selectedModule as DatasetType, true, activeCompany.id);
       }
 
       // Deduplicate by ID if any overlap
@@ -87,7 +89,7 @@ export default function DatasetsPage() {
 
   useEffect(() => {
     fetchSnapshots();
-  }, [selectedModule]);
+  }, [selectedModule, activeCompany.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -96,7 +98,7 @@ export default function DatasetsPage() {
 
   const handleStatusToggle = async (snap: FinancialSnapshot, targetStatus: 'active' | 'inactive' | 'archived') => {
     try {
-      await updateSnapshotStatus(snap.id, targetStatus, { fileName: snap.fileName, module: snap.module });
+      await updateSnapshotStatus(snap.id, targetStatus, { fileName: snap.fileName, module: snap.module }, activeCompany.id as any);
       showToast(
         targetStatus === 'inactive'
           ? `Dataset "${snap.fileName}" hidden. Excluded from active dashboard calculations.`
@@ -117,7 +119,7 @@ export default function DatasetsPage() {
     }
 
     try {
-      const signedUrl = await getSignedDownloadUrl(snap.storageBucket, snap.storagePath);
+      const signedUrl = await getSignedDownloadUrl(snap.storageBucket, snap.storagePath, activeCompany.id as any);
       if (!signedUrl) {
         alert('Could not generate secure signed URL. Storage link may be unconfigured.');
         return;
@@ -129,7 +131,7 @@ export default function DatasetsPage() {
         fileName: snap.fileName,
         module: snap.module,
         details: `Downloaded original Excel file "${snap.fileName}" via secure signed URL.`,
-      });
+      }, activeCompany.id as any);
 
       window.open(signedUrl, '_blank');
       showToast(`Downloading original Excel file "${snap.fileName}"...`);

@@ -6,6 +6,7 @@ import { FinancialTransaction } from '@/types';
 import { AuditHealthSummary, runFinancialAuditScan, AuditIssue } from '@/lib/finance/auditScanner';
 import { AuditHealthCard } from '@/components/dashboard/AuditHealthCard';
 import { ChartCard } from '@/components/dashboard/ChartCard';
+import { useCompany } from '@/context/CompanyContext';
 import {
   ResponsiveContainer,
   BarChart,
@@ -35,6 +36,7 @@ import {
 } from 'lucide-react';
 
 export default function AuditCenterPage() {
+  const { activeCompany } = useCompany();
   const [loading, setLoading] = useState<boolean>(true);
   const [salesTxns, setSalesTxns] = useState<FinancialTransaction[]>([]);
   const [purchasesTxns, setPurchasesTxns] = useState<FinancialTransaction[]>([]);
@@ -47,12 +49,12 @@ export default function AuditCenterPage() {
     setLoading(true);
     try {
       const [sales, purchases, receivables, payables, payments, receipts] = await Promise.all([
-        getActiveTransactionsForModule('sales'),
-        getActiveTransactionsForModule('purchases'),
-        getActiveTransactionsForModule('receivables'),
-        getActiveTransactionsForModule('payables'),
-        getActiveTransactionsForModule('payments'),
-        getActiveTransactionsForModule('receipts'),
+        getActiveTransactionsForModule('sales', null, activeCompany.id),
+        getActiveTransactionsForModule('purchases', null, activeCompany.id),
+        getActiveTransactionsForModule('receivables', null, activeCompany.id),
+        getActiveTransactionsForModule('payables', null, activeCompany.id),
+        getActiveTransactionsForModule('payments', null, activeCompany.id),
+        getActiveTransactionsForModule('receipts', null, activeCompany.id),
       ]);
 
       setSalesTxns(sales);
@@ -70,7 +72,7 @@ export default function AuditCenterPage() {
 
   useEffect(() => {
     loadAuditData();
-  }, []);
+  }, [activeCompany.id]);
 
   const auditSummary: AuditHealthSummary = useMemo(() => {
     return runFinancialAuditScan({

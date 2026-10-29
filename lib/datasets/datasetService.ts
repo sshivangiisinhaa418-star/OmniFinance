@@ -1,5 +1,7 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { getActiveStorageClient } from '@/lib/storage';
 import { FinancialSnapshot, AuditLogItem, DatasetType } from '@/types';
+import { CompanySlug } from '@/lib/company/companyConfig';
 
 /**
  * Calculates SHA-256 hash of an uploaded Excel file for duplicate detection
@@ -21,12 +23,14 @@ export const calculateFileHash = async (file: File): Promise<string> => {
  */
 export const checkDuplicateFileHash = async (
   fileHash: string,
-  module: DatasetType
+  module: DatasetType,
+  companyOverride?: CompanySlug
 ): Promise<FinancialSnapshot | null> => {
-  if (!fileHash || !isSupabaseConfigured() || !supabase) return null;
+  const db = getActiveStorageClient(companyOverride);
+  if (!fileHash || !db) return null;
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('snapshots')
       .select('*')
       .eq('module', module)
@@ -62,14 +66,16 @@ export const checkDuplicateFileHash = async (
 };
 
 /**
- * Stores original Excel file in private Supabase Storage bucket `finance-excel`
+ * Stores original Excel file in private Supabase Storage bucket `finance-excel` for the active company
  */
 export const uploadOriginalExcelToStorage = async (
   file: File,
   module: DatasetType,
-  snapshotId: string
+  snapshotId: string,
+  companyOverride?: CompanySlug
 ): Promise<{ bucket: string; path: string } | null> => {
-  if (!isSupabaseConfigured() || !supabase) return null;
+  const db = getActiveStorageClient(companyOverride);
+  if (!db) return null;
 
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
@@ -77,7 +83,7 @@ export const uploadOriginalExcelToStorage = async (
   const path = `${module}/${year}/${month}/${snapshotId}/${file.name}`;
 
   try {
-    const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+    const { data, error } = await db.storage.from(bucket).upload(path, file, {
       upsert: true,
     });
 
@@ -98,12 +104,14 @@ export const uploadOriginalExcelToStorage = async (
  */
 export const getSignedDownloadUrl = async (
   bucket: string,
-  path: string
+  path: string,
+  companyOverride?: CompanySlug
 ): Promise<string | null> => {
-  if (!isSupabaseConfigured() || !supabase || !path) return null;
+  const db = getActiveStorageClient(companyOverride);
+  if (!db || !path) return null;
 
   try {
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60);
+    const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 60);
     if (error || !data?.signedUrl) {
       console.error('Signed download URL generation error:', error);
       return null;
@@ -118,21 +126,24 @@ export const getSignedDownloadUrl = async (
 /**
  * Creates an audit log item in Supabase DB or local log
  */
-export const recordAuditLog = async (logItem: {
-  action: 'UPLOAD_DATASET' | 'HIDE_DATASET' | 'RESTORE_DATASET' | 'ARCHIVE_DATASET' | 'DOWNLOAD_DATASET' | 'DELETE_DATASET' | string;
-  datasetId: string;
-  fileName: string;
-  module: string;
-  details: string;
-  userEmail?: string;
-  metadata?: Record<string, any>;
-}): Promise<void> => {
+export const recordAuditLog = async (
+  logItem: {
+    action: 'UPLOAD_DATASET' | 'HIDE_DATASET' | 'RESTORE_DATASET' | 'ARCHIVE_DATASET' | 'DOWNLOAD_DATASET' | 'DELETE_DATASET' | string;
+    datasetId: string;
+    fileName: string;
+    module: string;
+    details: string;
+    userEmail?: string;
+    metadata?: Record<string, any>;
+  },
+  companyOverride?: CompanySlug
+): Promise<void> => {
   const actorEmail = logItem.userEmail || getStoredUserEmail() || 'Finance Executive';
-
-  if (!isSupabaseConfigured() || !supabase) return;
+  const db = getActiveStorageClient(companyOverride);
+  if (!db) return;
 
   try {
-    await supabase.from('audit_logs').insert([
+    await db.from('audit_logs').insert([
       {
         actor_email: actorEmail,
         action: logItem.action,
@@ -156,9 +167,11 @@ export const recordAuditLog = async (logItem: {
 export const updateSnapshotStatus = async (
   snapshotId: string,
   newStatus: 'active' | 'inactive' | 'archived',
-  snapshotMeta?: { fileName: string; module: string }
+  snapshotMeta?: { fileName: string; module: string },
+  companyOverride?: CompanySlug
 ): Promise<void> => {
-  if (!isSupabaseConfigured() || !supabase) {
+  const db = getActiveStorageClient(companyOverride);
+  if (!db) {
     throw new Error('Supabase client is not configured.');
   }
 
@@ -172,7 +185,7 @@ export const updateSnapshotStatus = async (
     updatePayload.archived_by = actorEmail;
   }
 
-  const { error } = await supabase
+  const { error } = await db
     .from('snapshots')
     .update(updatePayload)
     .eq('id', snapshotId);
@@ -196,7 +209,7 @@ export const updateSnapshotStatus = async (
     module: snapshotMeta?.module || 'general',
     details: `Dataset state changed to "${newStatus}" by ${actorEmail}.`,
     userEmail: actorEmail,
-  });
+  }, companyOverride);
 };
 
 /**
@@ -204,9 +217,11 @@ export const updateSnapshotStatus = async (
  * and triggers ON DELETE CASCADE for all linked database rows.
  */
 export const deleteSnapshotPermanently = async (
-  snapshot: FinancialSnapshot
+  snapshot: FinancialSnapshot,
+  companyOverride?: CompanySlug
 ): Promise<void> => {
-  if (!isSupabaseConfigured() || !supabase) {
+  const db = getActiveStorageClient(companyOverride);
+  if (!db) {
     throw new Error('Supabase client is not configured.');
   }
 
@@ -215,7 +230,7 @@ export const deleteSnapshotPermanently = async (
   // 1. Remove original Excel file from storage if present
   if (snapshot.storageBucket && snapshot.storagePath) {
     try {
-      await supabase.storage.from(snapshot.storageBucket).remove([snapshot.storagePath]);
+      await db.storage.from(snapshot.storageBucket).remove([snapshot.storagePath]);
     } catch (storageErr) {
       console.warn('Notice deleting storage object:', storageErr);
     }
@@ -235,10 +250,29 @@ export const deleteSnapshotPermanently = async (
       uploadedAt: snapshot.uploadedAt,
       uploadedBy: snapshot.uploadedBy,
     },
-  });
+  }, companyOverride);
 
-  // 3. Delete snapshot header from DB (Triggers ON DELETE CASCADE for linked transaction rows)
-  const { error } = await supabase
+  // 3. Explicitly delete linked transaction rows first to guarantee zero orphan rows across all table schemas
+  const moduleTableMap: Record<string, string> = {
+    sales: 'sales_transactions',
+    purchases: 'purchases_transactions',
+    receivables: 'receivables_transactions',
+    payables: 'payables_transactions',
+    payments: 'payments_transactions',
+    receipts: 'receipts_transactions',
+    inventory: 'inventory_stock',
+    tax: 'tax_gst_transactions',
+    expenses: 'expenses_transactions',
+  };
+  const targetTable = moduleTableMap[snapshot.module] || 'payables_transactions';
+  try {
+    await db.from(targetTable).delete().eq('snapshot_id', snapshot.id);
+  } catch (cleanErr) {
+    console.warn(`Notice: direct delete on ${targetTable} fallback:`, cleanErr);
+  }
+
+  // 4. Delete snapshot header from DB (Triggers ON DELETE CASCADE if configured in Postgres)
+  const { error } = await db
     .from('snapshots')
     .delete()
     .eq('id', snapshot.id);

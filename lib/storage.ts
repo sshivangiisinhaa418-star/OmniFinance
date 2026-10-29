@@ -1,6 +1,50 @@
 import { FinancialTransaction, SourceImport, AuditLogItem, FinancialSnapshot, DatasetType } from '@/types';
-import { supabase, isSupabaseConfigured } from './supabase/client';
+import { supabase, isSupabaseConfigured, getSupabaseForCompany } from './supabase/client';
+import { CompanySlug, DEFAULT_COMPANY, isValidCompanySlug } from '@/lib/company/companyConfig';
 import { recordAuditLog } from './datasets/datasetService';
+
+// Dynamically resolve active company slug from explicit override, URL path, query params, cookies, or localStorage
+export const resolveCurrentCompanySlug = (overrideCompany?: CompanySlug): CompanySlug => {
+  if (overrideCompany && isValidCompanySlug(overrideCompany.toLowerCase())) {
+    return overrideCompany.toLowerCase() as CompanySlug;
+  }
+  if (typeof window !== 'undefined') {
+    // 1. Check window.location.pathname (/bkm, /ssl/sales, /avl/purchases, etc.)
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    if (pathParts.length > 0 && isValidCompanySlug(pathParts[0].toLowerCase())) {
+      return pathParts[0].toLowerCase() as CompanySlug;
+    }
+    // 2. Check search params (?company=bkm)
+    const params = new URLSearchParams(window.location.search);
+    const paramComp = params.get('company');
+    if (paramComp && isValidCompanySlug(paramComp.toLowerCase())) {
+      return paramComp.toLowerCase() as CompanySlug;
+    }
+    // 3. Check cookies
+    const cookies = document.cookie.split(';').map(c => c.trim());
+    const cookieMatch = cookies.find(c => c.startsWith('omnifinance_active_company_id='));
+    if (cookieMatch) {
+      const val = cookieMatch.split('=')[1];
+      if (val && isValidCompanySlug(val.toLowerCase())) {
+        return val.toLowerCase() as CompanySlug;
+      }
+    }
+    // 4. Check localStorage
+    const saved = localStorage.getItem('omnifinance_active_company_id');
+    if (saved && isValidCompanySlug(saved.toLowerCase())) {
+      return saved.toLowerCase() as CompanySlug;
+    }
+  }
+  return DEFAULT_COMPANY;
+};
+
+// Resolve active Supabase database client according to the selected company
+export const getActiveStorageClient = (overrideCompany?: CompanySlug) => {
+  const activeSlug = resolveCurrentCompanySlug(overrideCompany);
+  const companyClient = getSupabaseForCompany(activeSlug);
+  if (companyClient) return companyClient;
+  return supabase;
+};
 
 // Map each financial module to its own dedicated Supabase table
 const getTableNameForModule = (module: DatasetType): string => {
@@ -34,9 +78,12 @@ const getTableNameForModule = (module: DatasetType): string => {
 
 export const getSnapshotsForModule = async (
   module: DatasetType,
-  filterByCompany: boolean = true
+  filterByCompany: boolean = true,
+  companyOverride?: CompanySlug
 ): Promise<FinancialSnapshot[]> => {
-  if (!isSupabaseConfigured() || !supabase) {
+  const activeSlug = resolveCurrentCompanySlug(companyOverride);
+  const db = getActiveStorageClient(activeSlug);
+  if (!db) {
     console.error('Supabase client is not configured.');
     return [];
   }
@@ -48,7 +95,7 @@ export const getSnapshotsForModule = async (
     let hasMore = true;
 
     while (hasMore) {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('snapshots')
         .select('*')
         .eq('module', module)
@@ -91,29 +138,46 @@ export const getSnapshotsForModule = async (
       storageBucket: d.storage_bucket,
       storagePath: d.storage_path,
       fileHash: d.file_hash,
-      companyName: d.company_name || 'BKM Industries Limited',
+      companyName: d.company_name || (activeSlug === 'ssl' ? 'SSL' : activeSlug === 'avl' ? 'AVL' : 'BKM'),
       archivedAt: d.archived_at,
       archivedBy: d.archived_by,
     }));
 
-    return mapped;
+    if (!filterByCompany) return mapped;
+
+    return mapped.filter(s => {
+      const cName = (s.companyName || '').toUpperCase();
+      const fName = (s.fileName || '').toUpperCase();
+      if (activeSlug === 'avl') {
+        return cName.includes('AVL') || cName.includes('AVPL') || fName.startsWith('AVPL') || fName.includes('AVL') || (!cName.includes('SSL') && !cName.includes('BKM') && !fName.includes('SSL') && !fName.includes('BKM'));
+      } else if (activeSlug === 'ssl') {
+        return cName.includes('SSL') || cName.includes('SPONGE') || fName.startsWith('SSL') || fName.includes('SPONGE') || (!cName.includes('AVL') && !cName.includes('BKM') && !fName.includes('AVL') && !fName.includes('AVPL') && !fName.includes('BKM'));
+      } else {
+        // BKM default
+        return cName.includes('BKM') || (!cName.includes('AVL') && !cName.includes('SSL') && !fName.startsWith('AVPL') && !fName.startsWith('SSL') && !fName.includes('SPONGE'));
+      }
+    });
   } catch (err) {
     console.error(`Exception fetching snapshots for ${module} from Supabase:`, err);
     return [];
   }
 };
 
-export const getLatestSnapshotForModule = async (module: DatasetType): Promise<FinancialSnapshot | null> => {
-  const snapshots = await getSnapshotsForModule(module, true);
+export const getLatestSnapshotForModule = async (
+  module: DatasetType,
+  companyOverride?: CompanySlug
+): Promise<FinancialSnapshot | null> => {
+  const snapshots = await getSnapshotsForModule(module, true, companyOverride);
   const activeSnapshots = snapshots.filter(s => s.status === 'active');
   return activeSnapshots.length > 0 ? activeSnapshots[0] : null;
 };
 
 // Fetch all distinct company names stored in Supabase DB snapshots table
 export const getAvailableCompaniesFromDB = async (): Promise<string[]> => {
-  if (!isSupabaseConfigured() || !supabase) return [];
+  const db = getActiveStorageClient();
+  if (!db) return [];
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('snapshots')
       .select('company_name');
     if (error || !data) return [];
@@ -130,12 +194,14 @@ export const getAvailableCompaniesFromDB = async (): Promise<string[]> => {
 // Retrieve transactions for a list of snapshot IDs in a single query
 export const getTransactionsForSnapshotIds = async (
   snapshotIds: string[],
-  module: DatasetType = 'payables'
+  module: DatasetType = 'payables',
+  companyOverride?: CompanySlug
 ): Promise<FinancialTransaction[]> => {
   if (!snapshotIds || snapshotIds.length === 0) return [];
   const tableName = getTableNameForModule(module);
 
-  if (!isSupabaseConfigured() || !supabase) {
+  const db = getActiveStorageClient(companyOverride);
+  if (!db) {
     console.error('Supabase client is not configured.');
     return [];
   }
@@ -147,7 +213,7 @@ export const getTransactionsForSnapshotIds = async (
     let hasMore = true;
 
     while (hasMore) {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from(tableName)
         .select('*')
         .in('snapshot_id', snapshotIds)
@@ -255,46 +321,52 @@ export const getTransactionsForSnapshotIds = async (
 
 export const getSnapshotTransactions = async (
   snapshotId: string,
-  module: DatasetType = 'payables'
+  module: DatasetType = 'payables',
+  companyOverride?: CompanySlug
 ): Promise<FinancialTransaction[]> => {
-  return getTransactionsForSnapshotIds([snapshotId], module);
+  return getTransactionsForSnapshotIds([snapshotId], module, companyOverride);
 };
 
 // Retrieve transactions for ALL active snapshots of a module (or specific snapshotId if passed)
 export const getActiveTransactionsForModule = async (
   module: DatasetType,
-  specificSnapshotId?: string | null
+  specificSnapshotId?: string | null,
+  companyOverride?: CompanySlug
 ): Promise<FinancialTransaction[]> => {
   if (specificSnapshotId && specificSnapshotId !== 'all') {
-    return getSnapshotTransactions(specificSnapshotId, module);
+    return getSnapshotTransactions(specificSnapshotId, module, companyOverride);
   }
 
-  const snapshots = await getSnapshotsForModule(module, true);
+  const snapshots = await getSnapshotsForModule(module, true, companyOverride);
   const activeSnapshotIds = snapshots.filter(s => s.status === 'active').map(s => s.id);
   if (activeSnapshotIds.length === 0) return [];
 
-  return getTransactionsForSnapshotIds(activeSnapshotIds, module);
+  return getTransactionsForSnapshotIds(activeSnapshotIds, module, companyOverride);
 };
 
 export const saveSnapshotWithTransactions = async (
   snapshot: FinancialSnapshot,
-  newTxns: FinancialTransaction[]
+  newTxns: FinancialTransaction[],
+  companyOverride?: CompanySlug
 ): Promise<void> => {
-  if (!isSupabaseConfigured() || !supabase) {
+  const activeSlug = resolveCurrentCompanySlug(companyOverride);
+
+  const db = getActiveStorageClient(activeSlug);
+  if (!db) {
     throw new Error('Supabase client is not configured.');
   }
 
   const tableName = getTableNameForModule(snapshot.module);
 
-  const selectedCompany = typeof window !== 'undefined'
-    ? (localStorage.getItem('omnifinance_selected_company') || 'BKM Industries Limited')
-    : 'BKM Industries Limited';
+  const targetCompanyName = snapshot.companyName || (
+    activeSlug === 'ssl' ? 'SSL' : activeSlug === 'avl' ? 'AVL' : 'BKM'
+  );
 
   // 1. Upsert Snapshot Header in Supabase
-  const { error: snapErr } = await supabase.from('snapshots').upsert({
+  const { error: snapErr } = await db.from('snapshots').upsert({
     id: snapshot.id,
     module: snapshot.module,
-    company_name: snapshot.companyName || selectedCompany,
+    company_name: targetCompanyName,
     file_name: snapshot.fileName,
     file_size: snapshot.fileSize || 0,
     uploaded_at: snapshot.uploadedAt,
@@ -521,13 +593,13 @@ export const saveSnapshotWithTransactions = async (
   const CHUNK_SIZE = 250;
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
-    let { error: insertErr } = await supabase.from(tableName).insert(chunk);
+    let { error: insertErr } = await db.from(tableName).insert(chunk);
 
     // Resilient fallback: if the target table doesn't have the 'raw_data' column in Supabase, strip it and retry
     if (insertErr && (insertErr.message?.includes('raw_data') || insertErr.details?.includes('raw_data') || insertErr.hint?.includes('raw_data'))) {
       console.warn(`Table "${tableName}" schema has no "raw_data" column. Retrying insert cleanly without raw_data...`);
       const cleanChunk = chunk.map(({ raw_data, ...rest }: any) => rest);
-      const retryRes = await supabase.from(tableName).insert(cleanChunk);
+      const retryRes = await db.from(tableName).insert(cleanChunk);
       insertErr = retryRes.error;
     }
 
@@ -535,7 +607,7 @@ export const saveSnapshotWithTransactions = async (
       console.error(`Failed to insert batch [${i}..${i + CHUNK_SIZE}] into Supabase table ${tableName}:`, insertErr);
       // Clean up orphaned snapshot header if transaction insert failed
       try {
-        await supabase.from('snapshots').delete().eq('id', snapshot.id);
+        await db.from('snapshots').delete().eq('id', snapshot.id);
       } catch {}
       throw insertErr;
     }
@@ -563,24 +635,26 @@ export const saveSnapshotWithTransactions = async (
 // ==========================================
 
 export const clearModuleData = async (module: DatasetType): Promise<void> => {
-  if (!isSupabaseConfigured() || !supabase) return;
+  const db = getActiveStorageClient();
+  if (!db) return;
   const tableName = getTableNameForModule(module);
   try {
-    await supabase.from(tableName).delete().neq('id', '0');
-    await supabase.from('snapshots').delete().eq('module', module);
+    await db.from(tableName).delete().neq('id', '0');
+    await db.from('snapshots').delete().eq('module', module);
   } catch (err) {
     console.error(`Failed to truncate Supabase table ${tableName}`, err);
   }
 };
 
 export const clearAllData = async (): Promise<void> => {
-  if (!isSupabaseConfigured() || !supabase) return;
+  const db = getActiveStorageClient();
+  if (!db) return;
   try {
     const modules: DatasetType[] = ['payables', 'receivables', 'sales', 'purchases', 'payments', 'receipts', 'inventory', 'tax', 'expenses'];
     for (const m of modules) {
-      await supabase.from(getTableNameForModule(m)).delete().not('id', 'is', null);
+      await db.from(getTableNameForModule(m)).delete().not('id', 'is', null);
     }
-    await supabase.from('snapshots').delete().not('id', 'is', null);
+    await db.from('snapshots').delete().not('id', 'is', null);
   } catch (err) {
     console.error('Failed to clear Supabase tables', err);
   }

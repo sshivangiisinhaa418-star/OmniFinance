@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/dashboard/EmptyState';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import { SnapshotSelector } from '@/components/dashboard/SnapshotSelector';
 import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
+import { useCompany } from '@/context/CompanyContext';
 import {
   CreditCard,
   AlertTriangle,
@@ -58,6 +59,7 @@ interface VendorRow {
 type SortField = 'name' | 'riskRating' | 'openingBalance' | 'debit' | 'credit' | 'closingBalance';
 
 export default function PayablesPage() {
+  const { activeCompany } = useCompany();
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>('all');
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
@@ -84,20 +86,20 @@ export default function PayablesPage() {
 
   const loadData = async (targetSnapshotId?: string | 'all') => {
     setLoading(true);
-    const snaps = await getSnapshotsForModule('payables');
+    const snaps = await getSnapshotsForModule('payables', true, activeCompany.id);
     setSnapshots(snaps);
 
     const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
-    const txns = await getActiveTransactionsForModule('payables', activeId);
+    const txns = await getActiveTransactionsForModule('payables', activeId, activeCompany.id);
     setTransactions(txns);
     setLoading(false);
   };
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeCompany.id]);
 
   const handleSelectSnapshot = (snap: FinancialSnapshot | 'all') => {
     const targetId = typeof snap === 'string' ? snap : snap.id;

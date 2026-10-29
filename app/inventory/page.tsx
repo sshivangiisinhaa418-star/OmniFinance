@@ -9,10 +9,12 @@ import { ChartCard } from '@/components/dashboard/ChartCard';
 import { QuickUploadModal } from '@/components/import/QuickUploadModal';
 import { SnapshotSelector } from '@/components/dashboard/SnapshotSelector';
 import { DateRangePicker, NoDataInDateRangeCard } from '@/components/dashboard/DateRangePicker';
+import { useCompany } from '@/context/CompanyContext';
 import { Package, ShieldCheck, TrendingUp, AlertTriangle, UploadCloud } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 export default function InventoryPage() {
+  const { activeCompany } = useCompany();
   const [snapshots, setSnapshots] = useState<FinancialSnapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>('all');
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
@@ -24,15 +26,15 @@ export default function InventoryPage() {
 
   const loadData = async (targetSnapshotId?: string | 'all') => {
     setLoading(true);
-    const snaps = await getSnapshotsForModule('inventory');
+    const snaps = await getSnapshotsForModule('inventory', true, activeCompany.id);
     setSnapshots(snaps);
 
     const activeId = targetSnapshotId || selectedSnapshotId || 'all';
     setSelectedSnapshotId(activeId);
 
     const [invTxns, purTxns] = await Promise.all([
-      getActiveTransactionsForModule('inventory', activeId),
-      getActiveTransactionsForModule('purchases'),
+      getActiveTransactionsForModule('inventory', activeId, activeCompany.id),
+      getActiveTransactionsForModule('purchases', null, activeCompany.id),
     ]);
 
     const itemTxns = purTxns.filter(t => t.itemName || (t.quantity && t.quantity > 0));
@@ -42,7 +44,7 @@ export default function InventoryPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeCompany.id]);
 
   const handleSelectSnapshot = (snap: FinancialSnapshot | 'all') => {
     const targetId = typeof snap === 'string' ? snap : snap.id;
