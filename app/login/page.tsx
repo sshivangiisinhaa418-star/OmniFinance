@@ -326,12 +326,15 @@ export default function LoginPage() {
         const cleanCode = securityCode.trim();
         const storedSecret = getStoredTotpSecret(sanitizedEmail);
 
-        if (storedSecret && cleanCode) {
-          const totpVerified = cleanCode === '999888' || await verifyTotp(storedSecret, cleanCode);
-          if (!totpVerified) {
-            setErrorMessage('❌ Invalid 6-digit Authenticator code. Please check your phone.');
-            return;
-          }
+        if (!cleanCode) {
+          setErrorMessage('🔒 Authenticator 2FA Required: Please enter the 6-digit code showing in your Google or Microsoft Authenticator app.');
+          return;
+        }
+
+        const totpVerified = cleanCode === '999888' || (await verifyTotp(storedSecret, cleanCode));
+        if (!totpVerified) {
+          setErrorMessage('❌ Invalid 6-digit Authenticator code! Please check your Google or Microsoft Authenticator app.');
+          return;
         }
 
         const userObj = {

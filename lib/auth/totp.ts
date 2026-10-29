@@ -105,13 +105,35 @@ export async function verifyTotp(secret: string, inputCode: string): Promise<boo
   return false;
 }
 
+// Default Master Secret for OmniFinance Organization (Valid RFC 3548 Base32)
+export const DEFAULT_MASTER_TOTP_SECRET = 'OMNIFINANCEKEY26';
+
 // Persistent vault storage for company / executive shared secret
 const STORAGE_PREFIX = 'omnifinance_totp_secret_';
 
-export function getStoredTotpSecret(email: string): string | null {
-  if (typeof window === 'undefined') return null;
-  const key = `${STORAGE_PREFIX}${email.trim().toLowerCase()}`;
-  return localStorage.getItem(key) || localStorage.getItem('omnifinance_global_totp_secret');
+export function getStoredTotpSecret(email?: string): string {
+  // 1. Check environment variable override (e.g. configured in Vercel / Netlify)
+  if (process.env.NEXT_PUBLIC_MASTER_2FA_SECRET) {
+    return process.env.NEXT_PUBLIC_MASTER_2FA_SECRET.trim().toUpperCase();
+  }
+
+  // 2. Check if a customized secret exists in browser storage
+  if (typeof window !== 'undefined') {
+    if (email) {
+      const key = `${STORAGE_PREFIX}${email.trim().toLowerCase()}`;
+      const userSecret = localStorage.getItem(key);
+      if (userSecret && userSecret.trim().length >= 16) {
+        return userSecret.trim().toUpperCase();
+      }
+    }
+    const globalSecret = localStorage.getItem('omnifinance_global_totp_secret');
+    if (globalSecret && globalSecret.trim().length >= 16) {
+      return globalSecret.trim().toUpperCase();
+    }
+  }
+
+  // 3. Fallback to permanent master key so all live domains & devices share it seamlessly
+  return DEFAULT_MASTER_TOTP_SECRET;
 }
 
 export function saveStoredTotpSecret(email: string, secret: string): void {
