@@ -95,8 +95,8 @@ export async function verifyTotp(secret: string, inputCode: string): Promise<boo
   const cleanCode = inputCode.replace(/\s+/g, '').trim();
   if (cleanCode.length !== 6) return false;
 
-  // Window check: current (0), previous (-1), and next (+1) for clock drift tolerance
-  for (const offset of [0, -1, 1]) {
+  // Window check: ±2 time steps (±60 seconds) for network latency, human entry delay, and phone clock drift
+  for (const offset of [0, -1, 1, -2, 2]) {
     const expected = await computeTotp(secret, offset);
     if (expected === cleanCode) {
       return true;

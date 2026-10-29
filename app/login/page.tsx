@@ -19,11 +19,17 @@ import {
   RefreshCw,
   MailCheck,
   KeyRound,
-  Smartphone
+  Smartphone,
+  QrCode,
+  Copy,
+  Check,
+  X
 } from 'lucide-react';
 import {
   verifyTotp,
-  getStoredTotpSecret
+  getStoredTotpSecret,
+  getOtpAuthUri,
+  getQrCodeImageUrl
 } from '@/lib/auth/totp';
 
 export default function LoginPage() {
@@ -32,6 +38,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [securityCode, setSecurityCode] = useState('');
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<'CFO' | 'Auditor' | 'Accountant'>('CFO');
   const [showPassword, setShowPassword] = useState(false);
@@ -521,16 +529,24 @@ export default function LoginPage() {
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-[11px] font-bold text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Smartphone className="w-3.5 h-3.5 text-orange-400" />
-                      <span>Authenticator 6-Digit Code</span>
+                      <span>Microsoft Authenticator 2FA</span>
                     </label>
-                    <span className="text-[10px] text-stone-500 font-medium">Google / Microsoft Authenticator</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowQrModal(true)}
+                      className="text-[11px] text-orange-400 font-bold hover:text-orange-300 transition flex items-center gap-1 cursor-pointer"
+                      title="Scan QR Code to link Microsoft or Google Authenticator"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>📲 Pair App / QR</span>
+                    </button>
                   </div>
                   <div className="relative">
                     <KeyRound className="w-4 h-4 text-orange-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       maxLength={6}
-                      placeholder="6-digit code (required for Admin 2FA)"
+                      placeholder="6-digit code from Microsoft Authenticator"
                       value={securityCode}
                       onChange={e => setSecurityCode(e.target.value.replace(/\s+/g, ''))}
                       className="w-full pl-10 pr-4 py-3 text-xs bg-stone-950 border border-stone-800 rounded-xl text-white placeholder-stone-600 focus:outline-none focus:border-orange-500 transition font-mono tracking-widest text-center sm:text-left text-sm"
@@ -538,7 +554,13 @@ export default function LoginPage() {
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-stone-400 mt-1.5">
                     <span>Google & Microsoft Authenticator</span>
-                    <span className="text-stone-500">Optional for staff</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowQrModal(true)}
+                      className="text-stone-400 hover:text-orange-400 underline cursor-pointer"
+                    >
+                      Need QR Code? Click here
+                    </button>
                   </div>
                 </div>
               )}
@@ -553,7 +575,7 @@ export default function LoginPage() {
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    <span>{isSignUp ? 'Register Security Credentials' : 'Sign In with Email & Credentials'}</span>
+                    <span>{isSignUp ? 'Register Security Credentials' : 'Sign In with Microsoft 2FA'}</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -577,6 +599,77 @@ export default function LoginPage() {
           </>
         )}
       </div>
+
+      {/* Microsoft Authenticator QR Pairing Modal */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="w-full max-w-sm bg-stone-900 border border-stone-800 rounded-3xl p-6 shadow-2xl space-y-4 text-white relative">
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-1">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-400 flex items-center justify-center mx-auto">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-black text-white">Pair Microsoft Authenticator</h3>
+              <p className="text-xs text-stone-400">
+                Scan with Microsoft or Google Authenticator on your phone
+              </p>
+            </div>
+
+            {/* QR Code Canvas */}
+            <div className="p-3 bg-white rounded-2xl flex items-center justify-center mx-auto w-fit shadow-inner">
+              <img
+                src={getQrCodeImageUrl(getOtpAuthUri(email.trim().toLowerCase() || 'cfo@omnifinance.com', getStoredTotpSecret(email), 'OmniFinance'))}
+                alt="Microsoft Authenticator QR Code"
+                className="w-48 h-48 rounded-lg"
+              />
+            </div>
+
+            {/* Manual Secret Key */}
+            <div className="p-3 rounded-xl bg-stone-950 border border-stone-800 space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-stone-400 font-bold uppercase">
+                <span>Manual Setup Key</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(getStoredTotpSecret(email));
+                    setCopiedKey(true);
+                    setTimeout(() => setCopiedKey(false), 2000);
+                  }}
+                  className="text-orange-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedKey ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedKey ? 'Copied!' : 'Copy Key'}</span>
+                </button>
+              </div>
+              <p className="font-mono text-xs font-bold text-orange-400 tracking-wider select-all text-center">
+                {getStoredTotpSecret(email)}
+              </p>
+            </div>
+
+            {/* Steps */}
+            <div className="text-[11px] text-stone-400 space-y-1.5 bg-stone-950/60 p-3 rounded-xl border border-stone-800/80">
+              <p className="text-stone-300 font-bold">Quick Setup Guide:</p>
+              <p>1. Open <strong>Microsoft Authenticator</strong> on your phone</p>
+              <p>2. Tap <strong>"+"</strong> → <strong>Other account</strong> → Scan this QR code</p>
+              <p>3. Close this box and enter the 6-digit code shown on your phone</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="w-full py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-lg"
+            >
+              Done — I Have Scanned the Code
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Footer Security Notice */}
       <div className="mt-6 text-center space-y-1 z-10">
