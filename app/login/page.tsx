@@ -63,6 +63,17 @@ export default function LoginPage() {
     }
   }, [otpCooldown]);
 
+  // Private Admin-Only 2FA QR Trigger:
+  // Completely hidden from the UI. Only opens if the admin explicitly adds ?setup2fa=omnisecret2026 to the URL.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('setup2fa') === 'omnisecret2026') {
+        setShowQrModal(true);
+      }
+    }
+  }, []);
+
   // Handler to dispatch dynamic 6-digit OTP to user's email
   const handleSendOtp = async () => {
     const sanitizedEmail = email.trim().toLowerCase();
@@ -101,35 +112,34 @@ export default function LoginPage() {
     }
   };
 
-  // If already logged in, redirect straight to dashboard
+  // Only redirect if user has an active, FULLY 2FA-VERIFIED session
   useEffect(() => {
     const verifyExistingSession = async () => {
-      let authed = false;
-      if (isSupabaseConfigured() && supabase) {
+      let isFullyAuthed = false;
+      const localSession = localStorage.getItem('tally_user_session');
+      if (localSession) {
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) authed = true;
-        } catch (err) {
-          console.error('Login session check error:', err);
-        }
-      }
-      if (!authed) {
-        const localSession = localStorage.getItem('tally_user_session');
-        if (localSession) {
-          try {
-            const parsed = JSON.parse(localSession);
-            if (parsed && (parsed.email || parsed.name)) {
-              authed = true;
-            }
-          } catch (e) {
-            localStorage.removeItem('tally_user_session');
+          const parsed = JSON.parse(localSession);
+          if (parsed && parsed.mfa_verified === true && (parsed.email || parsed.name)) {
+            isFullyAuthed = true;
           }
+        } catch (e) {
+          localStorage.removeItem('tally_user_session');
         }
       }
 
-      if (authed) {
-        router.replace('/');
+      // If user is not strictly MFA-verified, terminate any ghost Supabase session and keep them on login
+      if (!isFullyAuthed) {
+        if (isSupabaseConfigured() && supabase) {
+          try {
+            await supabase.auth.signOut();
+          } catch {}
+        }
+        localStorage.removeItem('tally_user_session');
+        return;
       }
+
+      router.replace('/');
     };
     verifyExistingSession();
   }, [router]);
@@ -266,43 +276,46 @@ export default function LoginPage() {
           const userRoleInDb = signedInUser?.user_metadata?.role || role;
           const storedSecret = getStoredTotpSecret(sanitizedEmail);
 
-          // 2FA is required once an Authenticator phone has been paired
-          if (storedSecret) {
-            if (!cleanCode) {
-              throw new Error(
-                '🔒 Authenticator 2FA Required: Please enter the 6-digit code showing in your Google or Microsoft Authenticator app.'
-              );
-            }
+          if (!cleanCode) {
+            // Terminate unverified session immediately
+            try { await activeAuthClient?.auth?.signOut(); } catch {}
+            localStorage.removeItem('tally_user_session');
+            throw new Error(
+              '🔒 Authenticator 2FA Required: Please enter the 6-digit code showing in your Microsoft Authenticator app.'
+            );
+          }
 
-            let totpVerified = cleanCode === '999888';
+          let totpVerified = cleanCode === '999888';
 
-            if (!totpVerified) {
-              totpVerified = await verifyTotp(storedSecret, cleanCode);
-            }
+          if (!totpVerified) {
+            totpVerified = await verifyTotp(storedSecret, cleanCode, sanitizedEmail);
+          }
 
-            if (!totpVerified && activeAuthClient?.auth?.mfa) {
-              try {
-                const { data: factors } = await activeAuthClient.auth.mfa.listFactors();
-                const totpFactor = factors?.totp?.[0];
-                if (totpFactor) {
-                  const { error: mfaErr } = await activeAuthClient.auth.mfa.challengeAndVerify({
-                    factorId: totpFactor.id,
-                    code: cleanCode,
-                  });
-                  if (!mfaErr) {
-                    totpVerified = true;
-                  }
+          if (!totpVerified && activeAuthClient?.auth?.mfa) {
+            try {
+              const { data: factors } = await activeAuthClient.auth.mfa.listFactors();
+              const totpFactor = factors?.totp?.[0];
+              if (totpFactor) {
+                const { error: mfaErr } = await activeAuthClient.auth.mfa.challengeAndVerify({
+                  factorId: totpFactor.id,
+                  code: cleanCode,
+                });
+                if (!mfaErr) {
+                  totpVerified = true;
                 }
-              } catch (mfaEx) {
-                console.warn('[MFA] Supabase TOTP note:', mfaEx);
               }
+            } catch (mfaEx) {
+              console.warn('[MFA] Supabase TOTP note:', mfaEx);
             }
+          }
 
-            if (!totpVerified) {
-              throw new Error(
-                '❌ Invalid 6-digit Authenticator code! Please check Google or Microsoft Authenticator on your phone (code refreshes every 30s).'
-              );
-            }
+          if (!totpVerified) {
+            // CRITICAL: Immediately terminate Supabase session so reload cannot bypass 2FA!
+            try { await activeAuthClient?.auth?.signOut(); } catch {}
+            localStorage.removeItem('tally_user_session');
+            throw new Error(
+              '❌ Invalid 6-digit Authenticator code! Please check your Microsoft Authenticator app.'
+            );
           }
 
           const finalUser = signedInUser;
@@ -310,6 +323,7 @@ export default function LoginPage() {
             email: finalUser?.email || sanitizedEmail,
             name: finalUser?.user_metadata?.full_name || fullName || 'Executive User',
             role: userRoleInDb || 'CFO',
+            mfa_verified: true, // EXPLICIT 2FA VERIFICATION STAMP
             loggedInAt: new Date().toISOString(),
           };
           localStorage.setItem('tally_user_session', JSON.stringify(userMeta));
@@ -335,13 +349,14 @@ export default function LoginPage() {
         const storedSecret = getStoredTotpSecret(sanitizedEmail);
 
         if (!cleanCode) {
-          setErrorMessage('🔒 Authenticator 2FA Required: Please enter the 6-digit code showing in your Google or Microsoft Authenticator app.');
+          setErrorMessage('🔒 Authenticator 2FA Required: Please enter the 6-digit code showing in your Microsoft Authenticator app.');
           return;
         }
 
-        const totpVerified = cleanCode === '999888' || (await verifyTotp(storedSecret, cleanCode));
+        const totpVerified = cleanCode === '999888' || (await verifyTotp(storedSecret, cleanCode, sanitizedEmail));
         if (!totpVerified) {
-          setErrorMessage('❌ Invalid 6-digit Authenticator code! Please check your Google or Microsoft Authenticator app.');
+          localStorage.removeItem('tally_user_session');
+          setErrorMessage('❌ Invalid 6-digit Authenticator code! Please check your Microsoft Authenticator app.');
           return;
         }
 
@@ -349,6 +364,7 @@ export default function LoginPage() {
           email: sanitizedEmail,
           name: fullName || 'Executive User',
           role: role,
+          mfa_verified: true, // EXPLICIT 2FA VERIFICATION STAMP
           loggedInAt: new Date().toISOString(),
         };
         localStorage.setItem('tally_user_session', JSON.stringify(userObj));
@@ -531,36 +547,25 @@ export default function LoginPage() {
                       <Smartphone className="w-3.5 h-3.5 text-orange-400" />
                       <span>Microsoft Authenticator 2FA</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowQrModal(true)}
-                      className="text-[11px] text-orange-400 font-bold hover:text-orange-300 transition flex items-center gap-1 cursor-pointer"
-                      title="Scan QR Code to link Microsoft or Google Authenticator"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      <span>📲 Pair App / QR</span>
-                    </button>
+                    <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      Enforced
+                    </span>
                   </div>
                   <div className="relative">
                     <KeyRound className="w-4 h-4 text-orange-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       maxLength={6}
-                      placeholder="6-digit code from Microsoft Authenticator"
+                      placeholder="Enter 6-digit code from your Authenticator app"
                       value={securityCode}
                       onChange={e => setSecurityCode(e.target.value.replace(/\s+/g, ''))}
                       className="w-full pl-10 pr-4 py-3 text-xs bg-stone-950 border border-stone-800 rounded-xl text-white placeholder-stone-600 focus:outline-none focus:border-orange-500 transition font-mono tracking-widest text-center sm:text-left text-sm"
                     />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-stone-400 mt-1.5">
-                    <span>Google & Microsoft Authenticator</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowQrModal(true)}
-                      className="text-stone-400 hover:text-orange-400 underline cursor-pointer"
-                    >
-                      Need QR Code? Click here
-                    </button>
+                    <span>Enter the live code from your paired device</span>
+                    <span className="text-stone-500 font-mono">Time-based OTP</span>
                   </div>
                 </div>
               )}

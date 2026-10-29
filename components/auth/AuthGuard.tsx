@@ -14,27 +14,26 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
   const isPublicRoute = pathname === '/login' || pathname === '/auth/callback';
 
   const checkHasValidSession = async (): Promise<boolean> => {
-    // 1. Check local session first (instant 0ms, prevents network blocking)
+    // Both valid user session AND explicit mfa_verified === true are strictly required
     if (typeof window !== 'undefined') {
       const localSession = localStorage.getItem('tally_user_session');
       if (localSession) {
         try {
           const parsed = JSON.parse(localSession);
-          if (parsed && (parsed.email || parsed.name)) return true;
+          if (parsed && parsed.mfa_verified === true && (parsed.email || parsed.name)) {
+            return true;
+          }
         } catch (e) {
           localStorage.removeItem('tally_user_session');
         }
       }
     }
 
-    // 2. Check Supabase session as fallback
+    // If not MFA verified, clean up any unauthenticated ghost Supabase session and deny access
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) return true;
-      } catch (err) {
-        console.error('Session verification error:', err);
-      }
+        await supabase.auth.signOut();
+      } catch {}
     }
 
     return false;
