@@ -18,6 +18,81 @@ export const calculateFileHash = async (file: File): Promise<string> => {
   }
 };
 
+const MODULE_TABLE_MAP: Record<string, string> = {
+  sales: 'sales_transactions',
+  purchases: 'purchases_transactions',
+  receivables: 'receivables_transactions',
+  payables: 'payables_transactions',
+  payments: 'payments_transactions',
+  receipts: 'receipts_transactions',
+  inventory: 'inventory_stock',
+  tax: 'tax_gst_transactions',
+  expenses: 'expenses_transactions',
+};
+
+export interface SnapshotDateRangeInfo {
+  snapshot: FinancialSnapshot;
+  minDate: string;
+  maxDate: string;
+}
+
+/**
+ * Finds existing active snapshots whose transaction_date range overlaps [newMinDate, newMaxDate].
+ * Uses lightweight 1-row min/max queries per active snapshot without modifying existing pipelines.
+ */
+export const getOverlappingActiveSnapshots = async (
+  module: DatasetType,
+  newMinDate: string,
+  newMaxDate: string,
+  activeSnapshots: FinancialSnapshot[],
+  companyOverride?: CompanySlug
+): Promise<SnapshotDateRangeInfo[]> => {
+  const db = getActiveStorageClient(companyOverride);
+  if (!db || !newMinDate || !newMaxDate || activeSnapshots.length === 0) return [];
+
+  // Inventory stock table does not carry transaction_date
+  if (module === 'inventory') return [];
+
+  const tableName = MODULE_TABLE_MAP[module] || 'payables_transactions';
+  const overlaps: SnapshotDateRangeInfo[] = [];
+
+  for (const snap of activeSnapshots) {
+    if (snap.status !== 'active') continue;
+    try {
+      const [{ data: minRows, error: minErr }, { data: maxRows, error: maxErr }] = await Promise.all([
+        db
+          .from(tableName)
+          .select('transaction_date')
+          .eq('snapshot_id', snap.id)
+          .not('transaction_date', 'is', null)
+          .order('transaction_date', { ascending: true })
+          .limit(1),
+        db
+          .from(tableName)
+          .select('transaction_date')
+          .eq('snapshot_id', snap.id)
+          .not('transaction_date', 'is', null)
+          .order('transaction_date', { ascending: false })
+          .limit(1),
+      ]);
+
+      if (minErr || maxErr || !minRows?.length || !maxRows?.length) continue;
+
+      const minDate = String(minRows[0].transaction_date || '').substring(0, 10);
+      const maxDate = String(maxRows[0].transaction_date || '').substring(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(minDate) || !/^\d{4}-\d{2}-\d{2}$/.test(maxDate)) continue;
+
+      if (newMinDate <= maxDate && newMaxDate >= minDate) {
+        overlaps.push({ snapshot: snap, minDate, maxDate });
+      }
+    } catch (err) {
+      console.warn(`Date range overlap check skipped for snapshot ${snap.id}:`, err);
+    }
+  }
+
+  return overlaps;
+};
+
 /**
  * Checks if a file with the exact same SHA-256 hash has already been uploaded for this module
  */

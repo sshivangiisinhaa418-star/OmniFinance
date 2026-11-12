@@ -1,15 +1,23 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DatasetType, FinancialSnapshot } from '@/types';
+import { DatasetType, FinancialSnapshot, FinancialTransaction } from '@/types';
 import { parseExcelFile, ParsedWorkbookResult, transformSheetToTransactions } from '@/lib/import/excelParser';
 import { parseAmount, parseBalanceAmount } from '@/lib/import/validator';
-import { saveSnapshotWithTransactions, getAvailableCompaniesFromDB } from '@/lib/storage';
+import { saveSnapshotWithTransactions, getAvailableCompaniesFromDB, getSnapshotsForModule } from '@/lib/storage';
 import { TARGET_FIELDS } from '@/lib/import/columnMapper';
 import { FileUploader } from './FileUploader';
-import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw, Building } from 'lucide-react';
+import { X, UploadCloud, CheckCircle2, FileSpreadsheet, ArrowRight, Check, AlertCircle, Calendar, RefreshCw, Building, ShieldAlert, Layers } from 'lucide-react';
 
-import { calculateFileHash, checkDuplicateFileHash, uploadOriginalExcelToStorage, getStoredUserEmail } from '@/lib/datasets/datasetService';
+import {
+  calculateFileHash,
+  checkDuplicateFileHash,
+  uploadOriginalExcelToStorage,
+  getStoredUserEmail,
+  getOverlappingActiveSnapshots,
+  SnapshotDateRangeInfo,
+  updateSnapshotStatus,
+} from '@/lib/datasets/datasetService';
 import { useCompany } from '@/context/CompanyContext';
 
 interface QuickUploadModalProps {
@@ -43,6 +51,23 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     file: File;
     result: ParsedWorkbookResult;
   } | null>(null);
+  const [duplicateBlockData, setDuplicateBlockData] = useState<{
+    file: File;
+    existingSnapshot: FinancialSnapshot;
+  } | null>(null);
+  const [overlapData, setOverlapData] = useState<{
+    file: File;
+    targetSheet: ParsedWorkbookResult['sheets'][0];
+    datasetType: DatasetType;
+    importId: string;
+    snapshotId: string;
+    fileHash: string;
+    transformedTxns: FinancialTransaction[];
+    nonOverlappingTxns: FinancialTransaction[];
+    newMinDate: string;
+    newMaxDate: string;
+    overlaps: SnapshotDateRangeInfo[];
+  } | null>(null);
 
   const targetCompany = activeCompany.name;
 
@@ -59,6 +84,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     setSuccessMessage(null);
     setSelectedModuleOverride(null);
     setMismatchData(null);
+    setDuplicateBlockData(null);
+    setOverlapData(null);
   };
 
   const handleClose = () => {
@@ -73,6 +100,127 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
   const handleConfirmAndSaveSnapshot = async () => {
     if (!parsedResult || !activeFile) return;
     await handleWorkbookParsed(parsedResult, activeFile, selectedModuleOverride || undefined);
+  };
+
+  const finalizeSnapshotUpload = async (
+    params: {
+      file: File;
+      targetSheet: ParsedWorkbookResult['sheets'][0];
+      datasetType: DatasetType;
+      snapshotId: string;
+      fileHash: string;
+    },
+    txnsToSave: FinancialTransaction[],
+    useSheetGrandTotal: boolean
+  ) => {
+    const { file, targetSheet, datasetType, snapshotId, fileHash } = params;
+
+    setProgress(55);
+    setProgressStatus(`Uploading to ${activeCompany.name} Storage Bucket...`);
+    const storageResult = await uploadOriginalExcelToStorage(file, datasetType, snapshotId, activeCompany.id as any);
+
+    const isPayable = datasetType === 'payables' || datasetType === 'purchases';
+    let grandTotalOpening = txnsToSave.reduce((sum, t) => sum + (t.openingBalance || 0), 0);
+    let grandTotalDebit = txnsToSave.reduce((sum, t) => sum + (t.debit || 0), 0);
+    let grandTotalCredit = txnsToSave.reduce((sum, t) => sum + (t.credit || 0), 0);
+    let grandTotalClosing = txnsToSave.reduce((sum, t) => sum + (t.closingBalance || 0), 0);
+
+    if (useSheetGrandTotal && targetSheet.grandTotal) {
+      const gt = targetSheet.grandTotal;
+      if (gt['Opening Balance'] !== undefined && gt['Opening Balance'] !== '') {
+        grandTotalOpening = parseBalanceAmount(gt['Opening Balance'], isPayable);
+      }
+      if (gt['Debit'] !== undefined && gt['Debit'] !== '') {
+        grandTotalDebit = parseAmount(gt['Debit']);
+      }
+      if (gt['Credit'] !== undefined && gt['Credit'] !== '') {
+        grandTotalCredit = parseAmount(gt['Credit']);
+      }
+      if (gt['Closing Balance'] !== undefined && gt['Closing Balance'] !== '') {
+        grandTotalClosing = parseBalanceAmount(gt['Closing Balance'], isPayable);
+      }
+    }
+
+    const userEmail = getStoredUserEmail();
+
+    const newSnapshot: FinancialSnapshot = {
+      id: snapshotId,
+      module: datasetType,
+      companyName: targetCompany,
+      fileName: file.name,
+      fileSize: file.size,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: userEmail,
+      recordCount: txnsToSave.length,
+      status: 'active',
+      grandTotalOpening,
+      grandTotalDebit,
+      grandTotalCredit,
+      grandTotalClosing,
+      storageBucket: storageResult?.bucket,
+      storagePath: storageResult?.path,
+      fileHash: fileHash || undefined,
+    };
+
+    setProgress(88);
+    setProgressStatus(`Inserting ${txnsToSave.length} Records to ${activeCompany.name} Database...`);
+    await saveSnapshotWithTransactions(newSnapshot, txnsToSave, activeCompany.id as any);
+
+    setProgress(100);
+    setProgressStatus('Upload & Database Sync Complete!');
+
+    setImporting(false);
+    setStep('success');
+    setSuccessMessage(`Direct Upload Complete! Processed ${txnsToSave.length} records into Supabase for "${file.name}" [Module: ${datasetType.toUpperCase()}].`);
+
+    setTimeout(() => {
+      handleClose();
+      if (onImportSuccess) {
+        onImportSuccess(snapshotId);
+      }
+    }, 1200);
+  };
+
+  const handleReplaceOverlapping = async () => {
+    if (!overlapData) return;
+    const pending = overlapData;
+    setOverlapData(null);
+    setImporting(true);
+    setProgress(35);
+    setProgressStatus(`Archiving ${pending.overlaps.length} overlapping snapshot(s)...`);
+
+    try {
+      for (const o of pending.overlaps) {
+        await updateSnapshotStatus(
+          o.snapshot.id,
+          'archived',
+          { fileName: o.snapshot.fileName, module: o.snapshot.module },
+          activeCompany.id as any
+        );
+      }
+      await finalizeSnapshotUpload(pending, pending.transformedTxns, true);
+    } catch (err: any) {
+      console.error('Error replacing overlapping snapshots:', err);
+      setImporting(false);
+      alert(`Upload Error: ${err.message || String(err)}`);
+    }
+  };
+
+  const handleImportNonOverlappingOnly = async () => {
+    if (!overlapData || overlapData.nonOverlappingTxns.length === 0) return;
+    const pending = overlapData;
+    setOverlapData(null);
+    setImporting(true);
+    setProgress(45);
+    setProgressStatus(`Importing ${pending.nonOverlappingTxns.length} non-overlapping records...`);
+
+    try {
+      await finalizeSnapshotUpload(pending, pending.nonOverlappingTxns, false);
+    } catch (err: any) {
+      console.error('Error importing non-overlapping rows:', err);
+      setImporting(false);
+      alert(`Upload Error: ${err.message || String(err)}`);
+    }
   };
 
   const handleWorkbookParsed = async (
@@ -99,6 +247,8 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
     }
 
     setMismatchData(null);
+    setDuplicateBlockData(null);
+    setOverlapData(null);
     setActiveFile(file);
     setParsedResult(result);
     setImporting(true);
@@ -110,16 +260,30 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
       const importId = 'imp_' + Math.random().toString(36).substring(2, 9);
       const snapshotId = `snap_${datasetType}_${new Date().toISOString().replace(/[^0-9]/g, '').substring(0, 14)}`;
 
-      // 1. Calculate file SHA-256 hash & check duplicate in this company's DB
+      // 1. Calculate file SHA-256 hash & check duplicate in this company's snapshots
       const fileHash = await calculateFileHash(file);
-      setProgress(30);
+      setProgress(25);
       setProgressStatus(`Checking Duplicate Hashes in ${activeCompany.name}...`);
 
+      const companySnapshots = await getSnapshotsForModule(datasetType, true, activeCompany.id as any);
+
       if (fileHash) {
-        const duplicate = await checkDuplicateFileHash(fileHash, datasetType, activeCompany.id as any);
-        if (duplicate) {
+        const activeDuplicate = companySnapshots.find(
+          s => s.status === 'active' && s.fileHash && s.fileHash === fileHash
+        );
+        if (activeDuplicate) {
+          setImporting(false);
+          setProgress(0);
+          setDuplicateBlockData({ file, existingSnapshot: activeDuplicate });
+          return;
+        }
+
+        const archivedDuplicate = companySnapshots.find(
+          s => s.status !== 'active' && s.fileHash && s.fileHash === fileHash
+        );
+        if (archivedDuplicate) {
           const confirmProceed = window.confirm(
-            `Notice: This exact Excel file "${file.name}" was already uploaded in ${activeCompany.name} on ${new Date(duplicate.uploadedAt).toLocaleDateString()} by ${duplicate.uploadedBy}.\n\nDo you want to upload it again as a new version dataset?`
+            `Notice: This exact Excel file "${file.name}" was previously uploaded in ${activeCompany.name} on ${new Date(archivedDuplicate.uploadedAt).toLocaleDateString()} and is currently ${archivedDuplicate.status}.\n\nDo you want to upload it again as a new active dataset?`
           );
           if (!confirmProceed) {
             setImporting(false);
@@ -129,14 +293,9 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
         }
       }
 
-      // 2. Upload raw Excel file to private Supabase Storage bucket 'finance-excel' in active company's project
-      setProgress(50);
-      setProgressStatus(`Uploading to ${activeCompany.name} Storage Bucket...`);
-      const storageResult = await uploadOriginalExcelToStorage(file, datasetType, snapshotId, activeCompany.id as any);
-
-      // 3. Build mappings using auto-mapped column target fields
-      setProgress(70);
-      setProgressStatus('Parsing Column Schema & Rows...');
+      // 2. Parse rows and check for date-range overlaps against existing active snapshots
+      setProgress(40);
+      setProgressStatus('Parsing Rows & Checking Date-Range Overlaps...');
       const mappings = targetSheet.columnMappings.map(m => ({
         excelHeader: m.excelHeader,
         targetField: m.targetField,
@@ -151,66 +310,52 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
         importId
       );
 
-      const isPayable = datasetType === 'payables' || datasetType === 'purchases';
-      let grandTotalOpening = transformedTxns.reduce((sum, t) => sum + (t.openingBalance || 0), 0);
-      let grandTotalDebit = transformedTxns.reduce((sum, t) => sum + (t.debit || 0), 0);
-      let grandTotalCredit = transformedTxns.reduce((sum, t) => sum + (t.credit || 0), 0);
-      let grandTotalClosing = transformedTxns.reduce((sum, t) => sum + (t.closingBalance || 0), 0);
+      const validDates = transformedTxns
+        .map(t => t.date)
+        .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
+        .sort();
 
-      if (targetSheet.grandTotal) {
-        const gt = targetSheet.grandTotal;
-        if (gt['Opening Balance'] !== undefined && gt['Opening Balance'] !== '') {
-          grandTotalOpening = parseBalanceAmount(gt['Opening Balance'], isPayable);
-        }
-        if (gt['Debit'] !== undefined && gt['Debit'] !== '') {
-          grandTotalDebit = parseAmount(gt['Debit']);
-        }
-        if (gt['Credit'] !== undefined && gt['Credit'] !== '') {
-          grandTotalCredit = parseAmount(gt['Credit']);
-        }
-        if (gt['Closing Balance'] !== undefined && gt['Closing Balance'] !== '') {
-          grandTotalClosing = parseBalanceAmount(gt['Closing Balance'], isPayable);
+      const activeSnapshots = companySnapshots.filter(s => s.status === 'active');
+
+      if (validDates.length > 0 && activeSnapshots.length > 0) {
+        const newMinDate = validDates[0];
+        const newMaxDate = validDates[validDates.length - 1];
+        const overlaps = await getOverlappingActiveSnapshots(
+          datasetType,
+          newMinDate,
+          newMaxDate,
+          activeSnapshots,
+          activeCompany.id as any
+        );
+
+        if (overlaps.length > 0) {
+          const nonOverlappingTxns = transformedTxns.filter(
+            t => !t.date || !overlaps.some(o => t.date >= o.minDate && t.date <= o.maxDate)
+          );
+          setImporting(false);
+          setProgress(0);
+          setOverlapData({
+            file,
+            targetSheet,
+            datasetType,
+            importId,
+            snapshotId,
+            fileHash,
+            transformedTxns,
+            nonOverlappingTxns,
+            newMinDate,
+            newMaxDate,
+            overlaps,
+          });
+          return;
         }
       }
 
-      const userEmail = getStoredUserEmail();
-
-      const newSnapshot: FinancialSnapshot = {
-        id: snapshotId,
-        module: datasetType,
-        companyName: targetCompany,
-        fileName: file.name,
-        fileSize: file.size,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: userEmail,
-        recordCount: transformedTxns.length,
-        status: 'active',
-        grandTotalOpening,
-        grandTotalDebit,
-        grandTotalCredit,
-        grandTotalClosing,
-        storageBucket: storageResult?.bucket,
-        storagePath: storageResult?.path,
-        fileHash: fileHash || undefined,
-      };
-
-      setProgress(88);
-      setProgressStatus(`Inserting ${transformedTxns.length} Records to ${activeCompany.name} Database...`);
-      await saveSnapshotWithTransactions(newSnapshot, transformedTxns, activeCompany.id as any);
-
-      setProgress(100);
-      setProgressStatus('Upload & Database Sync Complete!');
-
-      setImporting(false);
-      setStep('success');
-      setSuccessMessage(`Direct Upload Complete! Processed ${transformedTxns.length} records into Supabase for "${file.name}" [Module: ${datasetType.toUpperCase()}].`);
-
-      setTimeout(() => {
-        handleClose();
-        if (onImportSuccess) {
-          onImportSuccess(snapshotId);
-        }
-      }, 1200);
+      await finalizeSnapshotUpload(
+        { file, targetSheet, datasetType, snapshotId, fileHash },
+        transformedTxns,
+        true
+      );
     } catch (err: any) {
       console.error('Direct Snapshot Save Error:', err);
       setImporting(false);
@@ -356,7 +501,114 @@ export const QuickUploadModal: React.FC<QuickUploadModalProps> = ({
             </div>
           )}
 
-          {step === 'upload' && !importing && !mismatchData && (
+          {duplicateBlockData && !importing && (
+            <div className="p-6 space-y-5 bg-rose-500/10 border border-rose-500/30 rounded-2xl animate-fade-in my-2">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="w-6 h-6 text-rose-500 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-extrabold text-rose-600 dark:text-rose-400 uppercase tracking-wide">
+                    Duplicate File Blocked
+                  </h4>
+                  <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+                    The exact file <strong className="text-stone-900 dark:text-white">&quot;{duplicateBlockData.file.name}&quot;</strong> is already uploaded and <strong>Active</strong> in {activeCompany.name} (uploaded on{' '}
+                    <strong>{new Date(duplicateBlockData.existingSnapshot.uploadedAt).toLocaleDateString('en-IN')}</strong> as{' '}
+                    <span className="font-mono">{duplicateBlockData.existingSnapshot.fileName}</span>, {duplicateBlockData.existingSnapshot.recordCount} rows).
+                  </p>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400 pt-1">
+                    Uploading the same active file again is blocked to prevent double-counting your dashboard totals.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => resetState()}
+                  className="px-4 py-2 rounded-xl bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-bold hover:opacity-90 transition cursor-pointer"
+                >
+                  Choose Another File
+                </button>
+              </div>
+            </div>
+          )}
+
+          {overlapData && !importing && (
+            <div className="p-6 space-y-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl animate-fade-in my-2">
+              <div className="flex items-start gap-3">
+                <Layers className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-extrabold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                    Overlapping Date Range Detected
+                  </h4>
+                  <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+                    Your new file <strong className="text-stone-900 dark:text-white">&quot;{overlapData.file.name}&quot;</strong> covers{' '}
+                    <strong className="font-mono text-stone-900 dark:text-white">{overlapData.newMinDate}</strong> to{' '}
+                    <strong className="font-mono text-stone-900 dark:text-white">{overlapData.newMaxDate}</strong> ({overlapData.transformedTxns.length} rows), which overlaps with {overlapData.overlaps.length} active dataset(s):
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-h-36 overflow-y-auto">
+                {overlapData.overlaps.map(o => (
+                  <div
+                    key={o.snapshot.id}
+                    className="p-3 rounded-xl bg-white dark:bg-stone-900 border border-amber-500/20 flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileSpreadsheet className="w-4 h-4 text-orange-500 shrink-0" />
+                      <span className="font-bold text-stone-900 dark:text-white truncate">{o.snapshot.fileName}</span>
+                    </div>
+                    <div className="text-[11px] font-mono text-stone-500 dark:text-stone-400 shrink-0 ml-2">
+                      {o.minDate} to {o.maxDate} ({o.snapshot.recordCount} rows)
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={handleReplaceOverlapping}
+                  className="p-3.5 rounded-xl border border-orange-500 bg-orange-500/10 hover:bg-orange-500/20 text-left transition cursor-pointer space-y-1"
+                >
+                  <div className="font-extrabold text-orange-600 dark:text-orange-400">
+                    Replace Overlapping File(s) (Recommended)
+                  </div>
+                  <div className="text-[11px] text-stone-600 dark:text-stone-300">
+                    Archives old overlapping dataset(s) &amp; keeps all {overlapData.transformedTxns.length} rows from this file active.
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleImportNonOverlappingOnly}
+                  disabled={overlapData.nonOverlappingTxns.length === 0}
+                  className="p-3.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 hover:bg-stone-50 dark:hover:bg-stone-800 disabled:opacity-45 disabled:cursor-not-allowed text-left transition cursor-pointer space-y-1"
+                >
+                  <div className="font-extrabold text-stone-900 dark:text-white">
+                    Import Only New Dates ({overlapData.nonOverlappingTxns.length} rows)
+                  </div>
+                  <div className="text-[11px] text-stone-500 dark:text-stone-400">
+                    {overlapData.nonOverlappingTxns.length > 0
+                      ? 'Keeps old file active & skips rows inside existing date ranges.'
+                      : 'All dates in this file are already covered by existing active datasets.'}
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => resetState()}
+                  className="px-4 py-2 rounded-xl border border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300 text-xs font-bold hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                >
+                  Cancel Upload
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'upload' && !importing && !mismatchData && !duplicateBlockData && !overlapData && (
             <FileUploader onWorkbookParsed={handleWorkbookParsed} />
           )}
 
