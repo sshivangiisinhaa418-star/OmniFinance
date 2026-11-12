@@ -86,6 +86,20 @@ export default function PurchasesPage() {
     }
   };
 
+  const sanitizePurchaseTransaction = (t: FinancialTransaction): FinancialTransaction => {
+    const hasIntraStateTax = (t.cgst || 0) !== 0 || (t.sgst || 0) !== 0;
+    const cleanSaleAmount =
+      t.saleAmount !== undefined && t.saleAmount !== null && !isNaN(Number(t.saleAmount))
+        ? Number(t.saleAmount)
+        : 0;
+    return {
+      ...t,
+      saleAmount: cleanSaleAmount,
+      // Intra-state vouchers carrying CGST/SGST cannot simultaneously carry IGST
+      igst: hasIntraStateTax ? 0 : (t.igst || 0),
+    };
+  };
+
   const loadData = async (targetSnapshotId?: string | 'all') => {
     setLoading(true);
     const snaps = await getSnapshotsForModule('purchases', true, activeCompany.id);
@@ -95,7 +109,7 @@ export default function PurchasesPage() {
     setSelectedSnapshotId(activeId);
 
     const txns = await getActiveTransactionsForModule('purchases', activeId, activeCompany.id);
-    setTransactions(txns);
+    setTransactions(txns.map(sanitizePurchaseTransaction));
     setLoading(false);
   };
 
@@ -239,7 +253,7 @@ export default function PurchasesPage() {
     (acc, t) => {
       const taxSum = (t.igst || 0) + (t.cgst || 0) + (t.sgst || 0);
       const gross = t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + taxSum + (t.roundOff || 0) : 0);
-      const purchase = t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : (t.value || (gross > taxSum ? gross - taxSum - (t.roundOff || 0) : gross));
+      const purchase = t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : 0;
       const val = t.value !== undefined && t.value !== null ? t.value : (purchase || gross);
 
       acc.quantity += t.quantity || 0;
@@ -311,7 +325,7 @@ export default function PurchasesPage() {
       t.quantity || 0,
       t.value || 0,
       t.grossTotal || t.totalAmount || 0,
-      t.saleAmount || t.value || 0,
+      t.saleAmount ?? 0,
       t.igst || 0,
       t.roundOff || 0,
       t.cgst || 0,
@@ -741,7 +755,7 @@ export default function PurchasesPage() {
                       {fmt(t.grossTotal || t.totalAmount || t.amount || (t.value ? t.value + (t.igst||0) + (t.cgst||0) + (t.sgst||0) + (t.roundOff||0) : 0))}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {fmt(t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : (t.value || t.grossTotal))}
+                      {fmt(t.saleAmount !== undefined && t.saleAmount !== null ? t.saleAmount : 0)}
                     </td>
                     <td className="py-2.5 px-3 border-r border-stone-200 dark:border-stone-800 text-right font-mono text-stone-600 dark:text-stone-400">
                       {fmt(t.igst)}
